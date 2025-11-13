@@ -1,7 +1,5 @@
-<<<<<<< Updated upstream
 2 + 2
 # Sovs
-=======
 
 #Der er en ny linje.
 
@@ -15,4 +13,4 @@
 #skildilidlidy
 
 2+2+4
->>>>>>> Stashed changes
+s
