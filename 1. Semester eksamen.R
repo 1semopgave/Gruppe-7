@@ -4,7 +4,7 @@ pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
                "XML", "httr", "jsonlite", "lubridate", "microbenchmark",
                "splines", "ISLR2", "testthat", "MASS", "leaps", "caret",
                "RSQLite", "class", "babynames", "nasaweather",
-               "fueleconomy", "viridis", "boot", "glmnet", "pls")
+               "fueleconomy", "viridis", "boot", "glmnet", "pls", "rvest")
 
 # Superstats crawl
 
