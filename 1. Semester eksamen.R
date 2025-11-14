@@ -2,7 +2,7 @@ pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
                "Lahman", "maps", "lubridate", "pryr", "hms", "hexbin",
                "feather", "htmlwidgets", "broom", "pander", "modelr",
                "XML", "httr", "jsonlite", "lubridate", "microbenchmark",
-               "splines", "ISLR2", "MASS", "testthat", "leaps", "caret",
+               "splines", "ISLR2", "testthat", "MASS", "leaps", "caret",
                "RSQLite", "class", "babynames", "nasaweather",
                "fueleconomy", "viridis", "boot", "glmnet", "pls")
 
