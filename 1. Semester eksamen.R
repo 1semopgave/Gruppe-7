@@ -28,3 +28,42 @@ superstats_program
 
 # Laver alt data til én dataframe
 superstats_dataframe <- bind_rows(superstats_program, .id = "runde")
+
+
+
+### ---------------------------------------------------------------------------
+
+
+# Danske helligdage fra Nager.Date
+
+helligdage_list <- list()
+
+for (y in 2023:2025) {
+  
+  url_helligdage <- paste0("https://date.nager.at/api/v3/PublicHolidays/", y, "/DK")
+  print(url_helligdage)
+  
+  res <- httr::GET(url_helligdage)
+  
+  if (httr::status_code(res) == 200) {
+    json_content <- httr::content(res, as = "text", encoding = "UTF-8")
+    df <- jsonlite::fromJSON(json_content)
+    
+    helligdage_list[[as.character(y)]] <- df
+  }
+}
+
+
+# Kør for at se alle helligdagene
+helligdage_list
+
+# Saml alle år til ét dataframe
+helligdage_df <- bind_rows(helligdage_list)
+
+helligdage_df
+
+
+
+
+
+
