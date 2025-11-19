@@ -4,7 +4,31 @@ pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
                "XML", "httr", "jsonlite", "lubridate", "microbenchmark",
                "splines", "ISLR2", "testthat", "MASS", "leaps", "caret",
                "RSQLite", "class", "babynames", "nasaweather",
-               "fueleconomy", "viridis", "boot", "glmnet", "pls", "rvest")
+               "fueleconomy", "viridis", "boot", "glmnet", "pls", "rvest", "DBI", "RSQLite")
+
+
+readRDS("data/fcidk.rds")
+readRDS("data/vffkort01.rds")
+
+View(fcidk)
+View(vffkort01)
+
+
+
+
+con_data <- dbConnect(SQLite(), "ourdata/r_db_ex.sqlite")
+con <- dbConnect(SQLite(), "data/fodbolddata.sqlite")
+
+dbListTables(con)
+
+db_vff <- dbReadTable(con, "db_vff")
+db_fcidk<- dbReadTable(con, "db_fcidk")
+
+view(db_vff)
+view(db_fcidk)
+
+
+
 
 # Superstats crawl
 
@@ -64,6 +88,5 @@ helligdage_df
 
 
 
-
-
+#### ------------------------------------------------------------------
 
