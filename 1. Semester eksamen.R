@@ -226,3 +226,13 @@ vejr_all <- dplyr::bind_rows(
 )
 
 View(vejr_all)
+
+# Omdatter til wide format med pivot, altså så alle værdier får deres egen kolonner
+vejr_wide <- vejr_all %>%
+  dplyr::select(sæson, observationstidspunkt, type, værdi) %>%
+  tidyr::pivot_wider(
+    names_from = type,
+    values_from = værdi
+  )
+
+view(vejr_wide)
