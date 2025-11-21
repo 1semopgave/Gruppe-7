@@ -86,8 +86,18 @@ helligdage_df <- helligdage_df |>
     dato = date,
     helligdag = localName
   )  
-view(helligdage_df)
 str(helligdage_df)
+
+# Laver det fra character til dato
+helligdage_df <- helligdage_df %>%
+  mutate(dato = ymd(dato))
+
+# Fjerner alle banklukkedage fra datasættet
+helligdage_df <- helligdage_df %>%
+  filter(helligdag != "Banklukkedag")
+
+view(helligdage_df)
+
 
 #### DMI data ------------------------------------------------------------------
 
