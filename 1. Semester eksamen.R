@@ -76,16 +76,18 @@ for (y in 2023:2025) {
   }
 }
 
-
-# Kør for at se alle helligdagene
-helligdage_list
-
 # Saml alle år til ét dataframe
 helligdage_df <- bind_rows(helligdage_list)
 
-helligdage_df
-
-
+# Opdater datasættet
+helligdage_df <- helligdage_df |> 
+  dplyr::select(date, localName) |> 
+  rename(
+    dato = date,
+    helligdag = localName
+  )  
+view(helligdage_df)
+str(helligdage_df)
 
 #### DMI data ------------------------------------------------------------------
 
@@ -226,3 +228,13 @@ vejr_all <- dplyr::bind_rows(
 )
 
 View(vejr_all)
+
+# Omdatter til wide format med pivot, altså så alle værdier får deres egen kolonner
+vejr_wide <- vejr_all %>%
+  dplyr::select(sæson, observationstidspunkt, type, værdi) %>%
+  tidyr::pivot_wider(
+    names_from = type,
+    values_from = værdi
+  )
+
+view(vejr_wide)
