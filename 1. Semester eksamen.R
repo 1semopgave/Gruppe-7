@@ -10,8 +10,8 @@ pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
 # Indhentning af datafiler fra VFF
 
 # RDS filer
-readRDS("data/fcidk.rds")
-readRDS("data/vffkort01.rds")
+fcidk <- readRDS("data/fcidk.rds")
+vffkort01 <- readRDS("data/vffkort01.rds")
 
 View(fcidk)
 View(vffkort01)
