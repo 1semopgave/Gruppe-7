@@ -89,6 +89,10 @@ helligdage_df <- helligdage_df |>
 view(helligdage_df)
 str(helligdage_df)
 
+# Laver det fra character til dato
+helligdage_df <- helligdage_df %>%
+  mutate(dato = ymd(dato))
+
 #### DMI data ------------------------------------------------------------------
 
 # Base URL og API-nøgle
