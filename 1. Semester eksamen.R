@@ -51,9 +51,16 @@ superstats_program
 
 # Laver alt data til én dataframe
 superstats_dataframe <- bind_rows(superstats_program, .id = "runde")
+view(superstats_dataframe)
+#____________________Rasmus rettelse____________________________________________
+superstats_dataframe <- superstats_dataframe[ , -c(7, 8)]
 
+superstats_dataframe <- superstats_dataframe[
+  !(startsWith(superstats_dataframe$X1, "Runde") &
+      startsWith(superstats_dataframe$X2, "Runde")), ]
 
-
+superstats_dataframe <- superstats_dataframe |>
+  rename(Runde = runde,Ugedag = X1,Dato = X2,Hold = X3,Resultat = X4,Tilskuertal = X5)
 ### ---------------------------------------------------------------------------
 
 
