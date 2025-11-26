@@ -11,14 +11,14 @@ pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
 # Indhentning af datafiler fra VFF ----------------------------------------
 
   # RDS filer
-fcidk <- readRDS("data/fcidk.rds")
-vffkort01 <- readRDS("data/vffkort01.rds")
+fcidk <- readRDS("fcidk.rds")
+vffkort01 <- readRDS("vffkort01.rds")
 
 View(fcidk)
 View(vffkort01)
 
   # SQL fil
-con <- dbConnect(SQLite(), "data/fodbolddata.sqlite")
+con <- dbConnect(SQLite(), "fodbolddata.sqlite")
 dbListTables(con)
 
 db_vff <- dbReadTable(con, "db_vff")
@@ -50,15 +50,67 @@ superstats_program
 superstats_dataframe <- bind_rows(superstats_program, .id = "runde")
 view(superstats_dataframe)
 
+#Opretter ny variabel kaldet runde, og fjerner den gamle der havde forkert data
+superstats_dataframe <- superstats_dataframe %>%
+  dplyr::select(-dplyr::any_of("runde")) %>%
+  mutate(runde_new = ifelse(str_detect(X1, "^Runde"), X1, NA)) %>%
+  tidyr::fill(runde_new, .direction = "down") %>%
+  filter(!str_detect(X1, "^Runde")) %>%
+  rename(runde = runde_new)
+
 #Rensning af data fra Superstats
-superstats_dataframe <- superstats_dataframe[ , -c(7, 8)]
+superstats_dataframe <- dplyr::select(superstats_dataframe, -X6, -X7)
 
-superstats_dataframe <- superstats_dataframe[
-  !(startsWith(superstats_dataframe$X1, "Runde") &
-      startsWith(superstats_dataframe$X2, "Runde")), ]
-
+#Omdøber variablerne
 superstats_dataframe <- superstats_dataframe |>
   rename(Runde = runde,Ugedag = X1,Dato = X2,Hold = X3,Resultat = X4,Tilskuertal = X5)
+
+#Filtrere så vi kun kan se VFF hjuemmekampe
+superstats_dataframe <- superstats_dataframe |>
+  dplyr::filter(stringr::str_starts(Hold, "VFF"))
+
+#Laver 3 variabler der viser mål til VFF(hjemme) og mål til modstander(ude9)
+#Og en 3. variabel der viser om vff har fået en sejr(1) eller uafgjordt eller tabt(0)
+superstats_dataframe <- superstats_dataframe |>
+  tidyr::separate(Resultat, into = c("mål_hjemme", "mål_ude"), sep = "-", remove = FALSE) |>
+  dplyr::mutate(
+    mål_hjemme = as.numeric(mål_hjemme),
+    mål_ude = as.numeric(mål_ude),
+    vff_sejr = ifelse(mål_hjemme > mål_ude, 1, 0)
+  )
+
+#Laver en variabel der viser hvor mange sejr VFF har haft de seneste 3 kampe op til en given kamp
+superstats_dataframe <- superstats_dataframe |>
+  mutate(
+    sejre_seneste_3 =
+      lag(vff_sejr, 1) +
+      lag(vff_sejr, 2) +
+      lag(vff_sejr, 3)
+  )
+view(superstats_dataframe)
+#__________________________________
+#Antal mål VFF har scoret i de seneste tre hjemmekampe før kampdag
+superstats_dataframe <- superstats_dataframe %>%
+  mutate(
+    maal_seneste_3 = lag(mål_hjemme, 1) +
+      lag(mål_hjemme, 2) +
+      lag(mål_hjemme, 3)
+  )
+
+#Antal point VFF har fået de seneste tre kampe før kampdag
+#3 point ved sejr, 1 point ved uafgjort, 0 ved nederlag
+
+superstats_dataframe <- superstats_dataframe %>%
+  mutate(
+    point = case_when(
+      mål_hjemme > mål_ude ~ 3,
+      mål_hjemme == mål_ude ~ 1,
+      TRUE ~ 0
+    ),
+    point_seneste_3 = lag(point, 1) +
+      lag(point, 2) +
+      lag(point, 3)
+  )
 
 
 # Helligdage fra Nager.Date -----------------------------------------------
