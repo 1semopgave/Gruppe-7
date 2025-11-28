@@ -11,8 +11,8 @@ pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
 # Indhentning af datafiler fra VFF ----------------------------------------
 
   # RDS filer
-fcidk <- readRDS("fcidk.rds")
-vffkort01 <- readRDS("vffkort01.rds")
+fcidk <- readRDS("data/fcidk.rds")
+vffkort01 <- readRDS("data/vffkort01.rds")
 
 View(fcidk)
 View(vffkort01)
@@ -39,6 +39,9 @@ for (y in 2023:2025) {
   alle_tabeller <- read_html(url, encoding = "UTF-8") |> 
     html_nodes("div#club table") |> 
     html_table(header = FALSE, convert = FALSE)
+  
+  alle_tabeller <- bind_rows(alle_tabeller) |>
+    mutate(Season = y)  
   
   superstats_program[[as.character(y)]] <- alle_tabeller
 }
@@ -90,7 +93,7 @@ superstats_dataframe <- superstats_dataframe |>
 view(superstats_dataframe)
 #__________________________________
 #Antal mål VFF har scoret i de seneste tre hjemmekampe før kampdag
-superstats_dataframe <- superstats_dataframe %>%
+superstats_dataframe <- superstats_dataframe |> 
   mutate(
     maal_seneste_3 = lag(mål_hjemme, 1) +
       lag(mål_hjemme, 2) +
@@ -100,7 +103,7 @@ superstats_dataframe <- superstats_dataframe %>%
 #Antal point VFF har fået de seneste tre kampe før kampdag
 #3 point ved sejr, 1 point ved uafgjort, 0 ved nederlag
 
-superstats_dataframe <- superstats_dataframe %>%
+superstats_dataframe <- superstats_dataframe |> 
   mutate(
     point = case_when(
       mål_hjemme > mål_ude ~ 3,
@@ -110,6 +113,32 @@ superstats_dataframe <- superstats_dataframe %>%
     point_seneste_3 = lag(point, 1) +
       lag(point, 2) +
       lag(point, 3)
+  )
+
+# Her laver vi datovariabler
+superstats_dataframe <- superstats_dataframe |>
+filter(str_detect(Dato, "^\\d{2}/\\d{2}")) |>
+  mutate(
+    måned      = as.integer(substr(Dato, 4, 5)),
+    År         = if_else(måned >= 7, Season - 1, Season),
+    dag_maaned = substr(Dato, 1, 5),    # "dd/mm"
+    tid        = substr(Dato, 7, 11),   # "HH:MM"
+    Dato_text  = paste0(dag_maaned, "/", År, " ", tid),
+    datetime   = dmy_hm(Dato_text, tz = "Europe/Copenhagen"),
+    dato       = as.Date(datetime)
+  )
+
+str(superstats_dataframe)
+superstats_dataframe
+
+# Vi cleaner vores dataframe, så vi kun har de nødvendige variabler med
+superstats_clean <- superstats_dataframe |>
+  dplyr::select(
+    Ugedag, Hold, mål_hjemme, mål_ude,
+    Tilskuertal, Runde,
+    vff_sejr, sejre_seneste_3, maal_seneste_3,
+    point, point_seneste_3,
+    datetime, dato
   )
 
 
@@ -134,7 +163,7 @@ for (y in 2023:2025) {
 # Saml alle år til ét dataframe
 helligdage_df <- bind_rows(helligdage_list)
 
-helligdage_df <- helligdage_df |> 
+helligdage <- helligdage_df |> 
   dplyr::select(date, localName) |> 
   rename(
     dato = date,
@@ -145,7 +174,7 @@ helligdage_df <- helligdage_df |>
   ) |> 
   dplyr::filter(helligdag != "Banklukkedag")
 
-view(helligdage_df)
+view(helligdage)
 
 
 # DMI data ----------------------------------------------------------------
@@ -197,7 +226,7 @@ api_key <- Sys.getenv("MY_API_KEY")
 }
 
 # År der skal hentes
-år <- 2023:2025
+år <- 2022:2025
 karup <- "06060"
 vejr_list <- list()
 
@@ -250,12 +279,37 @@ for (y in år) {
 
 vejr_all <- dplyr::bind_rows(vejr_list, .id = "år")
 
-# Omdanner til wide format med pivot, altså så alle værdier får deres egen kolonner
-vejr_wide <- vejr_all |> 
-  dplyr::select(år, observationstidspunkt, type, værdi) |> 
+
+# Omdanner til wide format med pivot, og ændre observationstidspunkt til httm
+vejr_wide <- vejr_all |>
+  dplyr::select(år, observationstidspunkt, type, værdi) |>
+  dplyr::mutate(
+    # Konverter ISO-tid til datetime i UTC
+    datotid_utc = lubridate::ymd_hms(observationstidspunkt, tz = "UTC"),
+    # Konverter til dansk tid
+    datetime = lubridate::with_tz(datotid_utc, tzone = "Europe/Copenhagen")
+  ) |>
   tidyr::pivot_wider(
     names_from = type,
     values_from = værdi
-  )
+  ) |>
+  # Her vælger vi kun at  beholder datetime
+  dplyr::select(år, datetime, dplyr::everything(), -år, -observationstidspunkt, -datotid_utc)
 
 view(vejr_wide)
+
+
+
+# Joining af datasæt ------------------------------------------------------
+
+superstats_helligdage <- superstats_clean |>
+  left_join(helligdage, by = "dato") |>
+  mutate(
+    helligdag_dummy = if_else(is.na(helligdag), 0, 1)
+  ) |>
+  dplyr::select(-helligdag) 
+
+
+kamp_vejr_hellig <- superstats_helligdage |> 
+  mutate(datetime = floor_date(datetime, "hour")) |> 
+  left_join(vejr_wide, by = "datetime")
