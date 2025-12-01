@@ -125,17 +125,23 @@ filter(str_detect(Dato, "^\\d{2}/\\d{2}")) |>
     tid        = substr(Dato, 7, 11),   # "HH:MM"
     Dato_text  = paste0(dag_maaned, "/", År, " ", tid),
     datetime   = dmy_hm(Dato_text, tz = "Europe/Copenhagen"),
-    dato       = as.Date(datetime)
+    dato       = as.Date(datetime),
+    # Nedstående laves der en kolonne med rundenummer samt sæson
+    runde_nr = as.integer(str_extract(Runde, "\\d+")),
+    season   = case_when(
+      month(dato) >= 7 ~ paste0(year(dato), "/", year(dato) + 1),
+      TRUE             ~ paste0(year(dato) - 1, "/", year(dato))
+    )
   )
+    
 
-str(superstats_dataframe)
 superstats_dataframe
 
 # Vi cleaner vores dataframe, så vi kun har de nødvendige variabler med
 superstats_clean <- superstats_dataframe |>
   dplyr::select(
     Ugedag, Hold, mål_hjemme, mål_ude,
-    Tilskuertal, Runde,
+    Tilskuertal, Runde, runde_nr, season,
     vff_sejr, sejre_seneste_3, maal_seneste_3,
     point, point_seneste_3,
     datetime, dato
@@ -294,7 +300,7 @@ vejr_wide <- vejr_all |>
     values_from = værdi
   ) |>
   # Her vælger vi kun at  beholder datetime
-  dplyr::select(år, datetime, dplyr::everything(), -år, -observationstidspunkt, -datotid_utc)
+  dplyr::select(datetime, dplyr::everything(), -år, -observationstidspunkt, -datotid_utc)
 
 view(vejr_wide)
 
@@ -302,6 +308,7 @@ view(vejr_wide)
 
 # Joining af datasæt ------------------------------------------------------
 
+# Her joiner vi data fra superstats med helligdage
 superstats_helligdage <- superstats_clean |>
   left_join(helligdage, by = "dato") |>
   mutate(
@@ -309,7 +316,19 @@ superstats_helligdage <- superstats_clean |>
   ) |>
   dplyr::select(-helligdag) 
 
-
+# Herefter joiner vi overstående med data fra DMI, så vi får et stort dataframe
 kamp_vejr_hellig <- superstats_helligdage |> 
   mutate(datetime = floor_date(datetime, "hour")) |> 
   left_join(vejr_wide, by = "datetime")
+
+view(kamp_vejr_hellig)
+
+# Nu joiner vi overstående med vffkort01
+fuld_datasæt <- kamp_vejr_hellig |>
+  left_join(
+    vffkort01,
+    by = c("season" = "sæson", "runde_nr" = "runde")
+  )
+
+view(fuld_datasæt)
+
