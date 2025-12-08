@@ -31,7 +31,7 @@ view(db_fcidk)
 # Superstats crawl --------------------------------------------------------
 superstats_program <- list()
 
-for (y in 2023:2025) {
+for (y in 2003:2025) {
   
   url <- paste0("https://superstats.dk/program?season=", y)
   print(url)
@@ -48,6 +48,13 @@ for (y in 2023:2025) {
 
 # Kør denne linje for at se data fra Superstats
 superstats_program
+
+# Superstats gemmes til RDS -----------------------------------------------
+saveRDS(superstats_program, file = "data/superstats_program.rds")
+
+# Load RDS
+superstats_data <- readRDS("data/superstats_program.rds")
+
 
 # Laver alt data til én dataframe
 superstats_dataframe <- bind_rows(superstats_program, .id = "runde")
@@ -151,7 +158,7 @@ superstats_clean <- superstats_dataframe |>
 # Helligdage fra Nager.Date -----------------------------------------------
 helligdage_list <- list()
 
-for (y in 2023:2025) {
+for (y in 2003:2025) {
   
   url_helligdage <- paste0("https://date.nager.at/api/v3/PublicHolidays/", y, "/DK")
   print(url_helligdage)
@@ -182,6 +189,11 @@ helligdage <- helligdage_df |>
 
 view(helligdage)
 
+# DMI gemmes til RDS -----------------------------------------------
+saveRDS(helligdage, file = "data/helligdage.rds")
+
+# Load RDS
+helligdage <- readRDS("data/helligdage.rds")
 
 # DMI data ----------------------------------------------------------------
   # Base URL og API-nøgle
@@ -231,8 +243,9 @@ api_key <- Sys.getenv("MY_API_KEY")
   return(df_selected)
 }
 
+  
 # År der skal hentes
-år <- 2022:2025
+år <- 2003:2025
 karup <- "06060"
 vejr_list <- list()
 
@@ -285,6 +298,11 @@ for (y in år) {
 
 vejr_all <- dplyr::bind_rows(vejr_list, .id = "år")
 
+# DMI gemmes til RDS -----------------------------------------------
+saveRDS(vejr_all, file = "data/vejr_all.rds")
+
+# Load RDS
+vejr_all <- readRDS("data/vejr_all.rds")
 
 # Omdanner til wide format med pivot, og ændre observationstidspunkt til httm
 vejr_wide <- vejr_all |>
@@ -303,7 +321,6 @@ vejr_wide <- vejr_all |>
   dplyr::select(datetime, dplyr::everything(), -år, -observationstidspunkt, -datotid_utc)
 
 view(vejr_wide)
-
 
 
 # Joining af datasæt ------------------------------------------------------
@@ -331,4 +348,3 @@ fuld_datasæt <- kamp_vejr_hellig |>
   )
 
 view(fuld_datasæt)
-
