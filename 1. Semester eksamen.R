@@ -245,7 +245,7 @@ api_key <- Sys.getenv("MY_API_KEY")
 
   
 # År der skal hentes
-år <- 2002:2025
+år <- 2003:2025
 karup <- "06060"
 vejr_list <- list()
 
@@ -372,9 +372,9 @@ for(i in 1:nrow(kamp_vejr_hellig)) {
   # beregn gennemsnit
   kamp_vejr_window[[i]] <- tibble(
     datetime = kamp_tid,
-    gns_vind   = mean(vejr_subset$vind,   na.rm = TRUE),
-    gns_temp   = mean(vejr_subset$temp,   na.rm = TRUE),
-    gns_nedbør = mean(vejr_subset$nedbør, na.rm = TRUE)
+  gns_vind   = round(mean(vejr_subset$vind,   na.rm = TRUE), 1),
+  gns_temp   = round(mean(vejr_subset$temp,   na.rm = TRUE), 1),
+  gns_nedbør = round(mean(vejr_subset$nedbør, na.rm = TRUE), 1)
   )
 }
 
@@ -383,11 +383,6 @@ kamp_vejr_window <- bind_rows(kamp_vejr_window)
 #Sæt på fulde datasæt
 fuld_datasæt <- fuld_datasæt |>
   left_join(kamp_vejr_window, by = "datetime")
-
-#Afrund nævnte variabler
-gns_vind   = round(mean(vejr_subset$vind,   na.rm = TRUE), 1),
-gns_temp   = round(mean(vejr_subset$temp,   na.rm = TRUE), 1),
-gns_nedbør = round(mean(vejr_subset$nedbør, na.rm = TRUE), 1)
 
 view(fuld_datasæt)
 #________________________________________________________________________________
@@ -431,23 +426,35 @@ fuld_datasæt <- fuld_datasæt |>
       # ---- Datetime ----
       datetime        = ymd_hms(datetime)
     )
-  
+
 view(fuld_datasæt)
+
   
 #Sætter seed, laver 70% trænigsdata, fjerner alle na i datasættet.
 set.seed(7)
-train <- sample(206, 145)
-fuld_datasæt <- na.omit(fuld_datasæt)
+train <- sample(207, 145)
 
-#Laver
-lm.fit <- lm(Tilskuertal ~ sejre_seneste_3, data = fuld_datasæt, subset = train)
+fuld_datasæt <- na.omit (fuld_datasæt)
+dim(fuld_datasæt)
 
-fuld_datasæt$Tilskuertal <- as.numeric(fuld_datasæt$Tilskuertal)
-
-
-mean(
-  (fuld_datasæt$Tilskuertal[-train] - predict(lm.fit, fuld_datasæt)[-train])^2
+# Byg modellen med relevante variabler
+lm_mod <- lm(
+  Tilskuertal ~ hold + mål_hjemme +gns_temp + gns_vind + gns_nedbør +
+    point + sejre_seneste_3 + maal_seneste_3 +
+    helligdag_dummy + Ugedag + datetime,
+  data = fuld_datasæt
 )
 
 
+#Laver modeller med forskellige P1, P2, P3.
+lm.fit <- lm(Tilskuertal ~ sejre_seneste_3, data = fuld_datasæt, subset = train)
+
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit, fuld_datasæt))[-train]^2)
+
+
+lm.fit2 <- lm (Tilskuertal ~ poly(sejre_seneste_3,2), data = fuld_datasæt, subset = train)
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit2, fuld_datasæt))[-train]^2)
+
+lm.fit3 <- lm (Tilskuertal ~ poly(sejre_seneste_3,3), data = fuld_datasæt, subset = train)
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit3, fuld_datasæt))[-train]^2)
 
