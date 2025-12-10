@@ -189,7 +189,7 @@ helligdage <- helligdage_df |>
 
 view(helligdage)
 
-# DMI gemmes til RDS -----------------------------------------------
+# Helligdage gemmes til RDS -----------------------------------------------
 saveRDS(helligdage, file = "data/helligdage.rds")
 
 # Load RDS
@@ -245,7 +245,7 @@ api_key <- Sys.getenv("MY_API_KEY")
 
   
 # År der skal hentes
-år <- 2003:2025
+år <- 2002:2025
 karup <- "06060"
 vejr_list <- list()
 
@@ -261,7 +261,7 @@ for (y in år) {
     parameter_id  = "wind_speed_past1h",
     start_date    = start,
     end_date      = slut,
-    limit         = 200000,
+    limit         = 50000,
     season_label  = as.character(y)
   ) |> 
     dplyr::mutate(type = "vind")
@@ -272,7 +272,7 @@ for (y in år) {
     parameter_id  = "temp_mean_past1h",
     start_date    = start,
     end_date      = slut,
-    limit         = 200000,
+    limit         = 50000,
     season_label  = as.character(y)
   ) |> 
     dplyr::mutate(type = "temp")
@@ -283,7 +283,7 @@ for (y in år) {
     parameter_id  = "precip_past1h",
     start_date    = start,
     end_date      = slut,
-    limit         = 200000,
+    limit         = 50000,
     season_label  = as.character(y)
   ) |> 
     dplyr::mutate(type = "nedbør")
@@ -323,6 +323,7 @@ vejr_wide <- vejr_all |>
 view(vejr_wide)
 
 
+
 # Joining af datasæt ------------------------------------------------------
 
 # Her joiner vi data fra superstats med helligdage
@@ -348,3 +349,105 @@ fuld_datasæt <- kamp_vejr_hellig |>
   )
 
 view(fuld_datasæt)
+
+#Fjerner alt data fra 2002, da vi kun har DMI data fra 2003 og frem
+fuld_datasæt <- fuld_datasæt |>
+  dplyr::filter(lubridate::year(dato) != 2002)
+
+#__________Esktra tilføjelse af variabel_____
+kamp_vejr_window <- list()
+
+for(i in 1:nrow(kamp_vejr_hellig)) {
+  
+  kamp_tid <- kamp_vejr_hellig$datetime[i]
+  
+  start_window <- kamp_tid - hours(3)
+  slut_window  <- kamp_tid + hours(2)
+  
+  # filtrér vejrdata i vinduet
+  vejr_subset <- vejr_wide |>
+    filter(datetime >= start_window,
+           datetime <= slut_window)
+  
+  # beregn gennemsnit
+  kamp_vejr_window[[i]] <- tibble(
+    datetime = kamp_tid,
+    gns_vind   = mean(vejr_subset$vind,   na.rm = TRUE),
+    gns_temp   = mean(vejr_subset$temp,   na.rm = TRUE),
+    gns_nedbør = mean(vejr_subset$nedbør, na.rm = TRUE)
+  )
+}
+
+# slå alle rækker sammen
+kamp_vejr_window <- bind_rows(kamp_vejr_window)
+#Sæt på fulde datasæt
+fuld_datasæt <- fuld_datasæt |>
+  left_join(kamp_vejr_window, by = "datetime")
+
+#Afrund nævnte variabler
+gns_vind   = round(mean(vejr_subset$vind,   na.rm = TRUE), 1),
+gns_temp   = round(mean(vejr_subset$temp,   na.rm = TRUE), 1),
+gns_nedbør = round(mean(vejr_subset$nedbør, na.rm = TRUE), 1)
+
+view(fuld_datasæt)
+#________________________________________________________________________________
+fuld_datasæt <- fuld_datasæt |>
+  dplyr::select(
+    Ugedag, hold, mål_hjemme, mål_ude, Tilskuertal,
+    sejre_seneste_3, maal_seneste_3, point, datetime,
+    helligdag_dummy, gns_vind, gns_temp, gns_nedbør,
+    d10, d7, d3, d10_tilskuere, d7_tilskuere, d3_tilskuere
+  )
+  
+  str(fuld_datasæt)
+  
+  fuld_datasæt <- fuld_datasæt |>
+    mutate(
+      # ---- Numeric variabler ----
+      Tilskuertal     = as.numeric(Tilskuertal),
+      mål_hjemme      = as.numeric(mål_hjemme),
+      mål_ude         = as.numeric(mål_ude),
+      sejre_seneste_3 = as.numeric(sejre_seneste_3),
+      maal_seneste_3  = as.numeric(maal_seneste_3),
+      point           = as.numeric(point),
+      
+      gns_vind        = as.numeric(gns_vind),
+      gns_temp        = as.numeric(gns_temp),
+      gns_nedbør      = as.numeric(gns_nedbør),
+      
+      d10             = as.numeric(d10),
+      d7              = as.numeric(d7),
+      d3              = as.numeric(d3),
+      
+      d10_tilskuere   = as.numeric(d10_tilskuere),
+      d7_tilskuere    = as.numeric(d7_tilskuere),
+      d3_tilskuere    = as.numeric(d3_tilskuere),
+      
+      # ---- Factor variabler ----
+      Ugedag          = as.factor(Ugedag),
+      hold            = as.factor(hold),
+      helligdag_dummy = as.factor(helligdag_dummy),
+      
+      # ---- Datetime ----
+      datetime        = ymd_hms(datetime)
+    )
+  
+view(fuld_datasæt)
+  
+#Sætter seed, laver 70% trænigsdata, fjerner alle na i datasættet.
+set.seed(7)
+train <- sample(206, 145)
+fuld_datasæt <- na.omit(fuld_datasæt)
+
+#Laver
+lm.fit <- lm(Tilskuertal ~ sejre_seneste_3, data = fuld_datasæt, subset = train)
+
+fuld_datasæt$Tilskuertal <- as.numeric(fuld_datasæt$Tilskuertal)
+
+
+mean(
+  (fuld_datasæt$Tilskuertal[-train] - predict(lm.fit, fuld_datasæt)[-train])^2
+)
+
+
+
