@@ -17,17 +17,6 @@ vffkort01 <- readRDS("data/vffkort01.rds")
 View(fcidk)
 View(vffkort01)
 
-  # SQL fil
-con <- dbConnect(SQLite(), "fodbolddata.sqlite")
-dbListTables(con)
-
-db_vff <- dbReadTable(con, "db_vff")
-db_fcidk<- dbReadTable(con, "db_fcidk")
-
-view(db_vff)
-view(db_fcidk)
-
-
 # Superstats crawl --------------------------------------------------------
 superstats_program <- list()
 
@@ -475,67 +464,81 @@ fuld_datasæt <- fuld_datasæt |>
 
 view(fuld_datasæt)
 
-#Gruppering af hold i A, B, C - brug for det senere i vores opgave 
-fuld_datasæt <- fuld_datasæt %>%
-  mutate(
-    hold_kategori = case_when(
-      hold %in% c("VFF-FCK", "VFF-BIF", "VFF-FCM", "VFF-AGF") ~ "A",
-      hold %in% c("VFF-AaB", "VFF-OB", "VFF-SIF", "VFF-RFC", "VFF-Esbjerg") ~ "B",
-      TRUE ~ "C"
-    ),
-    hold_kategori = factor(hold_kategori, levels = c("A", "B", "C"))
-  )
-#Fjerne variablet hold fra vores datatabel, da vi har hold_kategorie plus fjerne alle NA. 
+
+#________________________________________________________________________________
 fuld_datasæt <- fuld_datasæt |>
-  dplyr::select (-hold)
+  dplyr::select(
+    Ugedag, Hold, mål_hjemme, mål_ude, Tilskuertal,
+    sejre_seneste_3, maal_seneste_3, point, datetime,
+    helligdag_dummy, gns_vind, gns_temp, gns_nedbør,
+    d10, d7, d3, d10_tilskuere, d7_tilskuere, d3_tilskuere
+  )
 
-fuld_datasæt <- na.omit(fuld_datasæt)
-view(fuld_datasæt)
-
-
+  
 #Sætter seed, laver 70% trænigsdata, fjerner alle na i datasættet.
 set.seed(7)
+train <- sample(207, 145)
+
+set.seed(7)
+
+n <- nrow(fuld_datasæt1)
+train_index <- sample(1:n, size = floor(0.7 * n))
+
+train_data <- fuld_datasæt1[train_index, ]
+test_data  <- fuld_datasæt1[-train_index, ]
 
 
-train_ind <- sample(seq_len(nrow(fuld_datasæt)), size = 0.7 * nrow(fuld_datasæt))
-
-train <- fuld_datasæt[train_ind, ]
-test  <- fuld_datasæt[-train_ind, ]
 
 
+
+
+
+# Stor lineær regression
+stor_model <- lm(
+  Tilskuertal ~ vff_sejr +
+    sejre_seneste_3 +
+    maal_seneste_3 +
+    point +
+    point_seneste_3 +
+    helligdag_dummy +
+    vind + temp + nedbør +
+    gns_vind + gns_temp + gns_nedbør +
+    d10 + d7 + d3 +
+    d10_tilskuere + d7_tilskuere + d3_tilskuere,
+  data = train_data
+)
+
+summary(stor_model)
+
+
+
+
+
+
+
+
+
+fuld_datasæt <- na.omit (fuld_datasæt)
+dim(fuld_datasæt)
 
 # Byg modellen med relevante variabler
 lm_mod <- lm(
-  Tilskuertal ~ Ugedag +mål_hjemme + mål_ude + sejre_seneste_3 + maal_seneste_3 + point + datetime + 
-    helligdag_dummy + gns_temp + gns_vind + gns_nedbør + d10_tilskuere + d7_tilskuere + d3_tilskuere +
-    hold_kategori,
-  train)
-sm_01_træning <- summary(lm_mod)
-mean(sm_01_træning$residuals^2) #MSE for ikke flexible model på træningsdata
-
-
-pred01_test<- predict (lm_mod, test)
-sm_01_test <- summary (pred01_test)
-
-mean ((pred01_test-test$Tilskuertal)^2)  #lidt i tvil om jeg jeg valgt de rigtig vairable /kolon)
-
-
-#med polynomiumsgrad 
-
-lm_mod2 <- lm(
-  Tilskuertal ~ 
-    poly(mål_hjemme, 2, raw = TRUE) +
-    poly(mål_ude, 2, raw = TRUE) +
-    poly(sejre_seneste_3, 2, raw = TRUE) +
-    poly(maal_seneste_3, 2, raw = TRUE) +
-    poly(point, 2, raw = TRUE) +
-    poly(gns_temp, 2, raw = TRUE) +
-    poly(gns_vind, 2, raw = TRUE) +
-    poly(gns_nedbør, 2, raw = TRUE) +
-    poly(d10_tilskuere, 2, raw = TRUE) +
-    poly(d7_tilskuere, 2, raw = TRUE) +
-    poly(d3_tilskuere, 2, raw = TRUE) +
-    Ugedag + datetime + helligdag_dummy + hold_kategori,
-  data = train
+  Tilskuertal ~ hold + mål_hjemme +gns_temp + gns_vind + gns_nedbør +
+    point + sejre_seneste_3 + maal_seneste_3 +
+    helligdag_dummy + Ugedag + datetime,
+  data = fuld_datasæt
 )
+
+
+#Laver modeller med forskellige P1, P2, P3.
+lm.fit <- lm(Tilskuertal ~ sejre_seneste_3, data = fuld_datasæt, subset = train)
+
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit, fuld_datasæt))[-train]^2)
+
+
+lm.fit2 <- lm (Tilskuertal ~ poly(sejre_seneste_3,2), data = fuld_datasæt, subset = train)
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit2, fuld_datasæt))[-train]^2)
+
+lm.fit3 <- lm (Tilskuertal ~ poly(sejre_seneste_3,3), data = fuld_datasæt, subset = train)
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit3, fuld_datasæt))[-train]^2)
 
