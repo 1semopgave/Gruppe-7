@@ -31,7 +31,7 @@ view(db_fcidk)
 # Superstats crawl --------------------------------------------------------
 superstats_program <- list()
 
-for (y in 2003:2025) {
+for (y in 2003:2026) {
   
   url <- paste0("https://superstats.dk/program?season=", y)
   print(url)
@@ -53,7 +53,7 @@ superstats_program
 saveRDS(superstats_program, file = "data/superstats_program.rds")
 
 # Load RDS
-superstats_data <- readRDS("data/superstats_program.rds")
+superstats_program <- readRDS("data/superstats_program.rds")
 
 
 # Laver alt data til én dataframe
@@ -138,7 +138,8 @@ filter(str_detect(Dato, "^\\d{2}/\\d{2}")) |>
     season   = case_when(
       month(dato) >= 7 ~ paste0(year(dato), "/", year(dato) + 1),
       TRUE             ~ paste0(year(dato) - 1, "/", year(dato))
-    )
+    ), 
+          datetime_hour = floor_date(datetime, unit = "hour")
   )
     
 
@@ -151,7 +152,7 @@ superstats_clean <- superstats_dataframe |>
     Tilskuertal, Runde, runde_nr, season,
     vff_sejr, sejre_seneste_3, maal_seneste_3,
     point, point_seneste_3,
-    datetime, dato
+    datetime, datetime_hour, dato
   )
 
 
@@ -245,7 +246,7 @@ api_key <- Sys.getenv("MY_API_KEY")
 
   
 # År der skal hentes
-år <- 2002:2025
+år <- 2003:2025
 karup <- "06060"
 vejr_list <- list()
 
@@ -311,55 +312,143 @@ vejr_wide <- vejr_all |>
     # Konverter ISO-tid til datetime i UTC
     datotid_utc = lubridate::ymd_hms(observationstidspunkt, tz = "UTC"),
     # Konverter til dansk tid
-    datetime = lubridate::with_tz(datotid_utc, tzone = "Europe/Copenhagen")
+    datetime = lubridate::with_tz(datotid_utc, tzone = "Europe/Copenhagen"),
+    datetime_hour = floor_date(datetime, unit = "hour")
+    
   ) |>
   tidyr::pivot_wider(
     names_from = type,
     values_from = værdi
   ) |>
   # Her vælger vi kun at  beholder datetime
-  dplyr::select(datetime, dplyr::everything(), -år, -observationstidspunkt, -datotid_utc)
+  dplyr::select(datetime, datetime_hour, dplyr::everything(), -år, -observationstidspunkt, -datotid_utc)
 
 view(vejr_wide)
 
 
 
 # Joining af datasæt ------------------------------------------------------
+    # Ny projekt-database 
+con_sql <- dbConnect(SQLite(), "data/vff_projekt.sqlite1")
 
-# Her joiner vi data fra superstats med helligdage
-superstats_helligdage <- superstats_clean |>
-  left_join(helligdage, by = "dato") |>
+# Skriv de rensede dataframes ind som tabeller i databasen
+dbWriteTable(con_sql, "superstats", superstats_clean, overwrite = TRUE)
+dbWriteTable(con_sql, "helligdage", helligdage,      overwrite = TRUE)
+dbWriteTable(con_sql, "vejr",       vejr_wide,       overwrite = TRUE)
+dbWriteTable(con_sql, "vffkort",    vffkort01,       overwrite = TRUE)
+
+dbListTables(con_sql) 
+
+# SQL-join med SELECT, FROM, LEFT JOIN, WHERE, GROUP BY, HAVING
+sql_join <- "
+SELECT 
+  s.season,
+  s.runde_nr,
+  s.Runde,
+  s.Ugedag,
+  s.Hold,
+  s.mål_hjemme,
+  s.mål_ude,
+  s.Tilskuertal,
+  s.vff_sejr,
+  s.sejre_seneste_3,
+  s.maal_seneste_3,
+  s.point,
+  s.point_seneste_3,
+  s.datetime,
+  s.dato,
+
+    -- helligdag -> dummy
+    CASE 
+      WHEN h.dato IS NULL THEN 0 
+      ELSE 1 
+    END AS helligdag_dummy,
+
+    -- vejr
+    v.vind,
+    v.temp,
+    v.nedbør,
+
+    -- VFF billetdata
+    k.d10,
+    k.d7,
+    k.d3,
+    k.d10_tilskuere,
+    k.d7_tilskuere,
+    k.d3_tilskuere
+
+FROM superstats AS s
+
+LEFT JOIN helligdage AS h
+  ON s.dato = h.dato
+
+LEFT JOIN vejr AS v
+  ON s.datetime_hour = v.datetime_hour
+
+LEFT JOIN vffkort AS k
+  ON s.season   = k.sæson
+ AND s.runde_nr = k.runde
+
+-- behold kun VFF-hjemmekampe
+WHERE s.Hold LIKE 'VFF-%'
+
+GROUP BY 
+  s.season,
+  s.runde_nr,
+  s.datetime 
+  
+  HAVING COUNT(s.datetime) >= 1
+"
+
+# Hent joinet datasæt tilbage til R
+fuld_datasæt <- dbGetQuery(con_sql, sql_join)
+
+str(fuld_datasæt)
+View(fuld_datasæt)
+
+dbDisconnect(con_sql)
+
+    # ---- Konvertere ----
+fuld_datasæt <- fuld_datasæt |>
   mutate(
-    helligdag_dummy = if_else(is.na(helligdag), 0, 1)
-  ) |>
-  dplyr::select(-helligdag) 
-
-# Herefter joiner vi overstående med data fra DMI, så vi får et stort dataframe
-kamp_vejr_hellig <- superstats_helligdage |> 
-  mutate(datetime = floor_date(datetime, "hour")) |> 
-  left_join(vejr_wide, by = "datetime")
-
-view(kamp_vejr_hellig)
-
-# Nu joiner vi overstående med vffkort01
-fuld_datasæt <- kamp_vejr_hellig |>
-  left_join(
-    vffkort01,
-    by = c("season" = "sæson", "runde_nr" = "runde")
+    # ---- POSIXCT ----
+    datetime = as.POSIXct(datetime, origin = "1970-01-01", tz = "Europe/Copenhagen"),
+    
+    # ---- Datetime ----
+    dato = as.Date(dato, origin = "1970-01-01"),
+    
+    # ---- Factor variabler ----
+    Ugedag = as.factor(Ugedag),
+    Hold = as.factor(Hold),
+    season = as.factor(season),
+    Runde = as.factor(Runde),
+    
+    # ---- Numeric variabler ----
+    Tilskuertal = as.numeric(gsub("\\.", "", Tilskuertal)),
+    mål_hjemme = as.numeric(mål_hjemme),
+    mål_ude = as.numeric(mål_ude),
+    vff_sejr = as.numeric(vff_sejr),
+    sejre_seneste_3 = as.numeric(sejre_seneste_3),
+    maal_seneste_3 = as.numeric(maal_seneste_3),
+    point = as.numeric(point),
+    point_seneste_3 = as.numeric(point_seneste_3),
+    helligdag_dummy = as.integer(helligdag_dummy),
+    
+    d10 = as.numeric(d10),
+    d7  = as.numeric(d7),
+    d3  = as.numeric(d3),
+    d10_tilskuere = as.numeric(d10_tilskuere),
+    d7_tilskuere  = as.numeric(d7_tilskuere),
+    d3_tilskuere  = as.numeric(d3_tilskuere)
   )
 
-view(fuld_datasæt)
-
-#Fjerner alt data fra 2002, da vi kun har DMI data fra 2003 og frem
-fuld_datasæt <- fuld_datasæt |>
-  dplyr::filter(lubridate::year(dato) != 2002)
 
 #__________Esktra tilføjelse af variabel_____
 kamp_vejr_window <- list()
 
-for(i in 1:nrow(kamp_vejr_hellig)) {
+for(i in 1:nrow(fuld_datasæt)) {
   
-  kamp_tid <- kamp_vejr_hellig$datetime[i]
+  kamp_tid <- fuld_datasæt$datetime[i]
   
   start_window <- kamp_tid - hours(3)
   slut_window  <- kamp_tid + hours(2)
@@ -372,82 +461,30 @@ for(i in 1:nrow(kamp_vejr_hellig)) {
   # beregn gennemsnit
   kamp_vejr_window[[i]] <- tibble(
     datetime = kamp_tid,
-    gns_vind   = mean(vejr_subset$vind,   na.rm = TRUE),
-    gns_temp   = mean(vejr_subset$temp,   na.rm = TRUE),
-    gns_nedbør = mean(vejr_subset$nedbør, na.rm = TRUE)
+    gns_vind   = round(mean(vejr_subset$vind,   na.rm = TRUE), 1),
+    gns_temp   = round(mean(vejr_subset$temp,   na.rm = TRUE), 1),
+    gns_nedbør = round(mean(vejr_subset$nedbør, na.rm = TRUE), 1)
   )
 }
 
 # slå alle rækker sammen
 kamp_vejr_window <- bind_rows(kamp_vejr_window)
-#Sæt på fulde datasæt
+
+#Sæt på fulde datasæt, samt fjerner kampe fra 2002, da vi mangler dmi data
 fuld_datasæt <- fuld_datasæt |>
+  filter(lubridate::year(dato) != 2002) |>
   left_join(kamp_vejr_window, by = "datetime")
 
-#Afrund nævnte variabler
-gns_vind   = round(mean(vejr_subset$vind,   na.rm = TRUE), 1),
-gns_temp   = round(mean(vejr_subset$temp,   na.rm = TRUE), 1),
-gns_nedbør = round(mean(vejr_subset$nedbør, na.rm = TRUE), 1)
 
 view(fuld_datasæt)
-#________________________________________________________________________________
+
+
+
+# ________________________________________________________________________________
 fuld_datasæt <- fuld_datasæt |>
   dplyr::select(
-    Ugedag, hold, mål_hjemme, mål_ude, Tilskuertal,
+    Ugedag, Hold, mål_hjemme, mål_ude, Tilskuertal,
     sejre_seneste_3, maal_seneste_3, point, datetime,
     helligdag_dummy, gns_vind, gns_temp, gns_nedbør,
     d10, d7, d3, d10_tilskuere, d7_tilskuere, d3_tilskuere
   )
-  
-  str(fuld_datasæt)
-  
-  fuld_datasæt <- fuld_datasæt |>
-    mutate(
-      # ---- Numeric variabler ----
-      Tilskuertal     = as.numeric(Tilskuertal),
-      mål_hjemme      = as.numeric(mål_hjemme),
-      mål_ude         = as.numeric(mål_ude),
-      sejre_seneste_3 = as.numeric(sejre_seneste_3),
-      maal_seneste_3  = as.numeric(maal_seneste_3),
-      point           = as.numeric(point),
-      
-      gns_vind        = as.numeric(gns_vind),
-      gns_temp        = as.numeric(gns_temp),
-      gns_nedbør      = as.numeric(gns_nedbør),
-      
-      d10             = as.numeric(d10),
-      d7              = as.numeric(d7),
-      d3              = as.numeric(d3),
-      
-      d10_tilskuere   = as.numeric(d10_tilskuere),
-      d7_tilskuere    = as.numeric(d7_tilskuere),
-      d3_tilskuere    = as.numeric(d3_tilskuere),
-      
-      # ---- Factor variabler ----
-      Ugedag          = as.factor(Ugedag),
-      hold            = as.factor(hold),
-      helligdag_dummy = as.factor(helligdag_dummy),
-      
-      # ---- Datetime ----
-      datetime        = ymd_hms(datetime)
-    )
-  
-view(fuld_datasæt)
-  
-#Sætter seed, laver 70% trænigsdata, fjerner alle na i datasættet.
-set.seed(7)
-train <- sample(206, 145)
-fuld_datasæt <- na.omit(fuld_datasæt)
-
-#Laver
-lm.fit <- lm(Tilskuertal ~ sejre_seneste_3, data = fuld_datasæt, subset = train)
-
-fuld_datasæt$Tilskuertal <- as.numeric(fuld_datasæt$Tilskuertal)
-
-
-mean(
-  (fuld_datasæt$Tilskuertal[-train] - predict(lm.fit, fuld_datasæt)[-train])^2
-)
-
-
-
