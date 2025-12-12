@@ -17,17 +17,6 @@ vffkort01 <- readRDS("data/vffkort01.rds")
 View(fcidk)
 View(vffkort01)
 
-  # SQL fil
-con <- dbConnect(SQLite(), "fodbolddata.sqlite")
-dbListTables(con)
-
-db_vff <- dbReadTable(con, "db_vff")
-db_fcidk<- dbReadTable(con, "db_fcidk")
-
-view(db_vff)
-view(db_fcidk)
-
-
 # Superstats crawl --------------------------------------------------------
 superstats_program <- list()
 
@@ -489,6 +478,45 @@ fuld_datasæt <- fuld_datasæt |>
 #Sætter seed, laver 70% trænigsdata, fjerner alle na i datasættet.
 set.seed(7)
 train <- sample(207, 145)
+
+set.seed(7)
+
+n <- nrow(fuld_datasæt1)
+train_index <- sample(1:n, size = floor(0.7 * n))
+
+train_data <- fuld_datasæt1[train_index, ]
+test_data  <- fuld_datasæt1[-train_index, ]
+
+
+
+
+
+
+
+# Stor lineær regression
+stor_model <- lm(
+  Tilskuertal ~ vff_sejr +
+    sejre_seneste_3 +
+    maal_seneste_3 +
+    point +
+    point_seneste_3 +
+    helligdag_dummy +
+    vind + temp + nedbør +
+    gns_vind + gns_temp + gns_nedbør +
+    d10 + d7 + d3 +
+    d10_tilskuere + d7_tilskuere + d3_tilskuere,
+  data = train_data
+)
+
+summary(stor_model)
+
+
+
+
+
+
+
+
 
 fuld_datasæt <- na.omit (fuld_datasæt)
 dim(fuld_datasæt)
