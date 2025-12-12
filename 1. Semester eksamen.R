@@ -488,3 +488,17 @@ fuld_datasæt <- fuld_datasæt |>
     helligdag_dummy, gns_vind, gns_temp, gns_nedbør,
     d10, d7, d3, d10_tilskuere, d7_tilskuere, d3_tilskuere
   )
+
+
+
+#Laver modeller med forskellige P1, P2, P3.
+lm.fit <- lm(Tilskuertal ~ sejre_seneste_3, data = fuld_datasæt, subset = train)
+
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit, fuld_datasæt))[-train]^2)
+
+
+lm.fit2 <- lm (Tilskuertal ~ poly(sejre_seneste_3,2), data = fuld_datasæt, subset = train)
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit2, fuld_datasæt))[-train]^2)
+
+lm.fit3 <- lm (Tilskuertal ~ poly(sejre_seneste_3,3), data = fuld_datasæt, subset = train)
+mean((fuld_datasæt$Tilskuertal - predict(lm.fit3, fuld_datasæt))[-train]^2)
