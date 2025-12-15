@@ -531,3 +531,7 @@ cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_1, K = 5)
 cv.err$delta #mse
 sqrt(cv.err$delta) #rmse
 
+
+
+
+    ### Model for 10 dage før
