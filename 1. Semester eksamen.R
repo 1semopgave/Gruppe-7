@@ -42,7 +42,7 @@ superstats_program
 saveRDS(superstats_program, file = "data/superstats_program.rds")
 
 # Load RDS
-superstats_data <- readRDS("data/superstats_program.rds")
+superstats_program <- readRDS("data/superstats_program.rds")
 
 
 # Laver alt data til én dataframe
@@ -130,8 +130,10 @@ filter(str_detect(Dato, "^\\d{2}/\\d{2}")) |>
     ), 
       datetime_hour = floor_date(datetime, unit = "hour")
   )
-    
 
+# Filtrer 2026 fra, da kampene ikke er spillet endnu    
+superstats_dataframe <- superstats_dataframe |>
+  dplyr::filter(År != 2026)
 superstats_dataframe
 
 # Vi cleaner vores dataframe, så vi kun har de nødvendige variabler med
@@ -455,7 +457,7 @@ for(i in 1:nrow(fuld_datasæt)) {
 # slå alle rækker sammen
 kamp_vejr_window <- bind_rows(kamp_vejr_window)
 
-#Sæt på fulde datasæt, og fjerne 2002, da vi ingen dmi data har
+# Sæt på fulde datasæt, og fjerne 2002, da vi ingen dmi data har
 fuld_datasæt <- fuld_datasæt |>
   filter(lubridate::year(dato) != 2002) |>
   left_join(kamp_vejr_window, by = "datetime") |>
@@ -465,80 +467,67 @@ fuld_datasæt <- fuld_datasæt |>
 view(fuld_datasæt)
 
 
-#________________________________________________________________________________
-fuld_datasæt <- fuld_datasæt |>
-  dplyr::select(
-    Ugedag, Hold, mål_hjemme, mål_ude, Tilskuertal,
-    sejre_seneste_3, maal_seneste_3, point, datetime,
-    helligdag_dummy, gns_vind, gns_temp, gns_nedbør,
-    d10, d7, d3, d10_tilskuere, d7_tilskuere, d3_tilskuere
+# Gruppering af hold i A, B, C - brug for det senere i vores opgave 
+fuld_datasæt <- fuld_datasæt %>%
+  mutate(
+    hold_kategori = case_when(
+      Hold %in% c("VFF-FCK", "VFF-BIF", "VFF-FCM", "VFF-AGF") ~ "A",
+      Hold %in% c("VFF-AaB", "VFF-OB", "VFF-SIF", "VFF-RFC", "VFF-Esbjerg") ~ "B",
+      TRUE ~ "C"
+    ),
+    hold_kategori = factor(hold_kategori, levels = c("A", "B", "C"))
   )
+# Fjerne variablet hold fra vores datatabel, da vi har hold_kategorie plus fjerne alle NA. 
+fuld_datasæt <- fuld_datasæt |>
+  dplyr::select (-Hold)
 
-  
-#Sætter seed, laver 70% trænigsdata, fjerner alle na i datasættet.
+fuld_datasæt <- na.omit(fuld_datasæt)
+view(fuld_datasæt)
+
+
+
+
+# Sætter seed, laver 70% trænigsdata --------
+
 set.seed(7)
 train <- sample(207, 145)
 
-set.seed(7)
-
-n <- nrow(fuld_datasæt1)
-train_index <- sample(1:n, size = floor(0.7 * n))
-
-train_data <- fuld_datasæt1[train_index, ]
-test_data  <- fuld_datasæt1[-train_index, ]
-
-
-
-
-
-
-
-# Stor lineær regression
-stor_model <- lm(
-  Tilskuertal ~ vff_sejr +
-    sejre_seneste_3 +
-    maal_seneste_3 +
-    point +
-    point_seneste_3 +
-    helligdag_dummy +
-    vind + temp + nedbør +
-    gns_vind + gns_temp + gns_nedbør +
-    d10 + d7 + d3 +
-    d10_tilskuere + d7_tilskuere + d3_tilskuere,
-  data = train_data
+# Stor model
+lm.fit_stor43 <- lm(
+  Tilskuertal ~
+    vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
+    helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
+    data = fuld_datasæt, subset = train
 )
 
-summary(stor_model)
+summary(lm.fit_stor43)
+tilskuere_hat <- predict(lm.fit_stor43, fuld_datasæt)
+
+mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat)[-train]^2) #mse
+sqrt(mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat)[-train]^2)) #rmse
 
 
 
 
+# LOOCV
+glm.fit_stor_loocv1 <- glm(Tilskuertal ~
+    vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
+    helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
+    data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_loocv1, K = nrow(fuld_datasæt))
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
 
 
 
+# K-fold validation
+glm.fit_stor_k5_1 <- glm(Tilskuertal ~
+    vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
+    helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
+    data = fuld_datasæt)
 
-
-fuld_datasæt <- na.omit (fuld_datasæt)
-dim(fuld_datasæt)
-
-# Byg modellen med relevante variabler
-lm_mod <- lm(
-  Tilskuertal ~ hold + mål_hjemme +gns_temp + gns_vind + gns_nedbør +
-    point + sejre_seneste_3 + maal_seneste_3 +
-    helligdag_dummy + Ugedag + datetime,
-  data = fuld_datasæt
-)
-
-
-#Laver modeller med forskellige P1, P2, P3.
-lm.fit <- lm(Tilskuertal ~ sejre_seneste_3, data = fuld_datasæt, subset = train)
-
-mean((fuld_datasæt$Tilskuertal - predict(lm.fit, fuld_datasæt))[-train]^2)
-
-
-lm.fit2 <- lm (Tilskuertal ~ poly(sejre_seneste_3,2), data = fuld_datasæt, subset = train)
-mean((fuld_datasæt$Tilskuertal - predict(lm.fit2, fuld_datasæt))[-train]^2)
-
-lm.fit3 <- lm (Tilskuertal ~ poly(sejre_seneste_3,3), data = fuld_datasæt, subset = train)
-mean((fuld_datasæt$Tilskuertal - predict(lm.fit3, fuld_datasæt))[-train]^2)
+cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_1, K = 5)
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
 
