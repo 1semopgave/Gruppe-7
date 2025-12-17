@@ -1,4 +1,4 @@
-pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
+pacman::p_load("dplyr", "tidyverse", "car", "magrittr", "nycflights13", "gapminder",
                "Lahman", "maps", "lubridate", "pryr", "hms", "hexbin",
                "feather", "htmlwidgets", "broom", "pander", "modelr",
                "XML", "httr", "jsonlite", "lubridate", "microbenchmark",
@@ -9,7 +9,7 @@ pacman::p_load("tidyverse", "magrittr", "nycflights13", "gapminder",
 
 
 # Indhentning af datafiler fra VFF ----------------------------------------
-
+dplyr
   # RDS filer
 fcidk <- readRDS("data/fcidk.rds")
 vffkort01 <- readRDS("data/vffkort01.rds")
@@ -67,6 +67,17 @@ superstats_dataframe <- superstats_dataframe |>
 #Filtrere så vi kun kan se VFF hjuemmekampe
 superstats_dataframe <- superstats_dataframe |>
   dplyr::filter(stringr::str_starts(Hold, "VFF"))
+
+# Lav hold-kategori (A/B/C)
+superstats_dataframe <- superstats_dataframe |>
+  mutate(
+    hold_kategori = case_when(
+      Hold %in% c("VFF-FCK", "VFF-BIF", "VFF-FCM", "VFF-AGF") ~ "A",
+      Hold %in% c("VFF-AaB", "VFF-OB", "VFF-SIF", "VFF-RFC", "VFF-Esbjerg") ~ "B",
+      TRUE ~ "C"
+    ),
+    hold_kategori = factor(hold_kategori, levels = c("A", "B", "C"))
+  )
 
 #Laver 3 variabler der viser mål til VFF(hjemme) og mål til modstander(ude9)
 #Og en 3. variabel der viser om vff har fået en sejr(1) eller uafgjordt eller tabt(0)
@@ -131,19 +142,41 @@ filter(str_detect(Dato, "^\\d{2}/\\d{2}")) |>
       datetime_hour = floor_date(datetime, unit = "hour")
   )
 
+
 # Filtrer 2026 fra, da kampene ikke er spillet endnu    
 superstats_dataframe <- superstats_dataframe |>
-  dplyr::filter(År != 2026)
+  filter(År != 2026)
 superstats_dataframe
+
+
+# Tilskuertal til numeric 
+superstats_dataframe <- superstats_dataframe |>
+  mutate(
+    Tilskuertal = as.numeric(gsub("\\.", "", Tilskuertal))
+  ) |> # Laver en variabel som siger tilskuerantallet til sidste hjemmekamp mod modstanderen
+  mutate(
+    modstander = stringr::str_remove(Hold, "^VFF-"),  
+    modstander = stringr::str_squish(modstander)     
+  ) |>
+  arrange(modstander, dato, datetime) |>
+  group_by(modstander) |>
+  mutate(
+    tilskuere_sidste_modstander = lag(Tilskuertal)
+  ) |>
+  ungroup() |>
+  arrange(datetime)
+
+view(superstats_dataframe)
+
 
 # Vi cleaner vores dataframe, så vi kun har de nødvendige variabler med
 superstats_clean <- superstats_dataframe |>
   dplyr::select(
-    Ugedag, Hold, mål_hjemme, mål_ude,
-    Tilskuertal, Runde, runde_nr, season,
+    Ugedag, Hold, hold_kategori, mål_hjemme, mål_ude,
+    Tilskuertal, tilskuere_sidste_modstander, Runde, runde_nr, season,
     vff_sejr, sejre_seneste_3, maal_seneste_3,
     point, point_seneste_3,
-    datetime, datetime_hour, dato
+    datetime, datetime_hour, dato, 
   )
 
 
@@ -347,9 +380,11 @@ SELECT
   s.point_seneste_3,
   s.datetime,
   s.dato,
+  s.tilskuere_sidste_modstander,
+  s.hold_kategori,
 
     -- helligdag -> dummy
-    CASE 
+    CASE
       WHEN h.dato IS NULL THEN 0 
       ELSE 1 
     END AS helligdag_dummy,
@@ -467,47 +502,226 @@ fuld_datasæt <- fuld_datasæt |>
 view(fuld_datasæt)
 
 
-# Gruppering af hold i A, B, C - brug for det senere i vores opgave 
-fuld_datasæt <- fuld_datasæt %>%
-  mutate(
-    hold_kategori = case_when(
-      Hold %in% c("VFF-FCK", "VFF-BIF", "VFF-FCM", "VFF-AGF") ~ "A",
-      Hold %in% c("VFF-AaB", "VFF-OB", "VFF-SIF", "VFF-RFC", "VFF-Esbjerg") ~ "B",
-      TRUE ~ "C"
-    ),
-    hold_kategori = factor(hold_kategori, levels = c("A", "B", "C"))
-  )
-# Fjerne variablet hold fra vores datatabel, da vi har hold_kategorie plus fjerne alle NA. 
-fuld_datasæt <- fuld_datasæt |>
-  dplyr::select (-Hold)
-
-fuld_datasæt <- na.omit(fuld_datasæt)
-view(fuld_datasæt)
-
+# fuld_datasæt_model <- fuld_datasæt |>
+#   dplyr::select(-season, -Runde, -runde_nr, -dato, -vind, -temp, -nedbør,
+#     -d10, -d7, -d3
+#   )
+# view(fuld_datasæt_model)
+# str(fuld_datasæt_model)
 
 
 
 # Sætter seed, laver 70% trænigsdata --------
 
 set.seed(7)
-train <- sample(207, 145)
+train <- sample(206, 145)
+
+
+lm.fit_stor <- lm(
+  Tilskuertal ~
+    vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
+    helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
+  data = fuld_datasæt_model, subset = train)
+
+
+  
+# Flere måneder før
+    # Stor model
+fuld_datasæt <- fuld_datasæt |>   # måned som sæson/kalender-variabel
+    mutate(måned = lubridate::month(dato))
+  
+view(fuld_datasæt)
+  
+set.seed(7)
+train <- sample(206, 145)
+
+  
+lm_mdr <- lm(
+    Tilskuertal ~ hold_kategori +
+    Ugedag + helligdag_dummy + måned + tilskuere_sidste_modstander,
+    data = fuld_datasæt, subset = train
+  )
+  
+summary(lm_mdr)
+tilskuere_hat_måneder <- predict(lm_mdr, fuld_datasæt)
+
+
+mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat_måneder)[-train]^2) #mse
+rmse_måneder <- sqrt(mean((fuld_datasæt$Tilskuertal - tilskuere_hat_måneder)[-train]^2)) #rmse  
+
+    # LOOCV
+glm.lm_mdr_loocv <- glm(Tilskuertal ~ hold_kategori + tilskuere_sidste_modstander +
+    Ugedag + helligdag_dummy + måned,
+    data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.lm_mdr_loocv, K = nrow(fuld_datasæt))
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
+
+
+    # K-fold validation
+glm.fit_stor_k5_måneder <- glm(Tilskuertal ~
+    hold_kategori + tilskuere_sidste_modstander + Ugedag + helligdag_dummy + måned,
+    data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_måneder, K = 5)
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
+
+
+
+# 10 dage før
+    # Stor model
+
+lm_10d <- lm(
+  Tilskuertal ~ d10_tilskuere + d10 + hold_kategori + tilskuere_sidste_modstander +
+  Ugedag + helligdag_dummy + måned,
+  data = fuld_datasæt, subset = train
+)
+
+summary(lm_10d)
+tilskuere_hat_10 <- predict(lm_10d, fuld_datasæt)
+
+
+mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat_10)[-train]^2) #mse
+rmse_10d <- sqrt(mean((fuld_datasæt$Tilskuertal - tilskuere_hat_10)[-train]^2)) #rmse  
+
+# LOOCV
+glm.lm_10d_loocv <- glm(Tilskuertal ~ d10_tilskuere + d10 + hold_kategori +
+    tilskuere_sidste_modstander + Ugedag + helligdag_dummy + måned,
+    data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.lm_10d_loocv, K = nrow(fuld_datasæt))
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
+
+
+# K-fold validation
+glm.fit_stor_k5_10d <- glm(Tilskuertal ~
+  d10_tilskuere + d10 + hold_kategori + tilskuere_sidste_modstander +
+  Ugedag + helligdag_dummy + måned,
+  data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_10d, K = 5)
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
+
+
+# 7 dage før
+    # Stor model
+lm_7d <- lm(
+  Tilskuertal ~ d7_tilskuere + d7 + hold_kategori + tilskuere_sidste_modstander +
+    Ugedag + helligdag_dummy + måned,
+  data = fuld_datasæt, subset = train
+)
+
+summary(lm_7d)
+
+
+summary(lm_7d)
+tilskuere_hat_7 <- predict(lm_7d, fuld_datasæt)
+
+
+mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat_7)[-train]^2) #mse
+rmse_7d <- sqrt(mean((fuld_datasæt$Tilskuertal - tilskuere_hat_7)[-train]^2)) #rmse  
+
+
+# LOOCV
+glm.lm_7d_loocv <- glm(Tilskuertal ~ d7_tilskuere + d7 + hold_kategori +
+    tilskuere_sidste_modstander + Ugedag + helligdag_dummy + måned,
+    data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.lm_7d_loocv, K = nrow(fuld_datasæt))
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
+
+# K-fold validation
+glm.fit_stor_k5_7d <- glm(Tilskuertal ~
+  d7_tilskuere + d7 + hold_kategori + tilskuere_sidste_modstander +
+  Ugedag + helligdag_dummy + måned,
+  data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_7d, K = 5)
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
+
+
+
+# Stor model (3 dage før)
+lm_3d <- lm(
+  Tilskuertal ~ d3_tilskuere + d3 + hold_kategori + tilskuere_sidste_modstander +
+    Ugedag + helligdag_dummy + gns_temp + gns_nedbør + gns_vind,
+  data = fuld_datasæt, subset = train
+)
+
+summary(lm_3d)
+tilskuere_hat_3 <- predict(lm_3d, fuld_datasæt)
+
+
+mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat_3)[-train]^2) #mse
+rmse_3d <- sqrt(mean((fuld_datasæt$Tilskuertal - tilskuere_hat_3)[-train]^2)) #rmse  
+
+
+# LOOCV
+glm.lm_3d_loocv <- glm(Tilskuertal ~ d3_tilskuere + d3 + hold_kategori + 
+  tilskuere_sidste_modstander + Ugedag + helligdag_dummy + 
+  gns_temp + gns_nedbør + gns_vind,
+  data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.lm_3d_loocv, K = nrow(fuld_datasæt))
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
+
+# K-fold validation
+glm.fit_stor_k5_3d <- glm(Tilskuertal ~
+  d3_tilskuere + d3 + hold_kategori + tilskuere_sidste_modstander +
+  Ugedag + helligdag_dummy + gns_temp + gns_nedbør + gns_vind,
+  data = fuld_datasæt)
+
+cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_3d, K = 5)
+cv.err$delta #mse
+sqrt(cv.err$delta) #rmse
+
+
+
+
+
+
+
+
+
+
+
 
 # Stor model
 lm.fit_stor43 <- lm(
   Tilskuertal ~
     vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
     helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
-    data = fuld_datasæt, subset = train
+    data = fuld_datasæt_model, subset = train
 )
 
 summary(lm.fit_stor43)
-tilskuere_hat <- predict(lm.fit_stor43, fuld_datasæt)
+tilskuere_hat <- predict(lm.fit_stor43, fuld_datasæt_model)
 
-mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat)[-train]^2) #mse
-sqrt(mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat)[-train]^2)) #rmse
+mse_stor_validation <- mean((fuld_datasæt_model$Tilskuertal - tilskuere_hat)[-train]^2) #mse
+sqrt(mse_stor_validation <- mean((fuld_datasæt_model$Tilskuertal - tilskuere_hat)[-train]^2)) #rmse
 
 
+# lm.fit_stor44 <- lm(
+#   Tilskuertal ~ . ,
+#   data = fuld_datasæt_model, subset = train
+# )
 
+
+summary(lm.fit_stor44)
+tilskuere_hat <- predict(lm.fit_stor44, fuld_datasæt_model)
+
+mse_stor_validation <- mean((fuld_datasæt_model$Tilskuertal - tilskuere_hat)[-train]^2) #mse
+sqrt(mse_stor_validation <- mean((fuld_datasæt_model$Tilskuertal - tilskuere_hat)[-train]^2)) #rmse
+
+
+  
 
 # LOOCV
 glm.fit_stor_loocv1 <- glm(Tilskuertal ~
@@ -533,5 +747,3 @@ sqrt(cv.err$delta) #rmse
 
 
 
-
-    ### Model for 10 dage før
