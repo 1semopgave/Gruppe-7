@@ -173,7 +173,7 @@ view(superstats_dataframe)
 superstats_clean <- superstats_dataframe |>
   dplyr::select(
     Ugedag, Hold, hold_kategori, mål_hjemme, mål_ude,
-    Tilskuertal, tilskuere_sidste_modstander, Runde, runde_nr, season,
+    Tilskuertal, tilskuere_sidste_modstander, runde_nr, season,
     vff_sejr, sejre_seneste_3, maal_seneste_3,
     point, point_seneste_3,
     datetime, datetime_hour, dato, 
@@ -344,7 +344,7 @@ vejr_wide <- vejr_all |>
     values_from = værdi
   ) |>
   # Her vælger vi kun at  beholder datetime
-  dplyr::select(datetime, datetime_hour, dplyr::everything(), -år, -observationstidspunkt, -datotid_utc)
+  dplyr::select(datetime_hour, dplyr::everything(), -datetime, -år, -observationstidspunkt, -datotid_utc)
 
 view(vejr_wide)
 
@@ -367,7 +367,6 @@ sql_join <- "
 SELECT 
   s.season,
   s.runde_nr,
-  s.Runde,
   s.Ugedag,
   s.Hold,
   s.mål_hjemme,
@@ -395,9 +394,6 @@ SELECT
     v.nedbør,
 
     -- VFF billetdata
-    k.d10,
-    k.d7,
-    k.d3,
     k.d10_tilskuere,
     k.d7_tilskuere,
     k.d3_tilskuere
@@ -429,6 +425,9 @@ GROUP BY
 fuld_datasæt <- dbGetQuery(con_sql, sql_join)
 dbDisconnect(con_sql)
 
+view(fuld_datasæt)
+str(fuld_datasæt)
+
 # Konvertere
 fuld_datasæt <- fuld_datasæt |>
   mutate(
@@ -443,8 +442,7 @@ fuld_datasæt <- fuld_datasæt |>
     Ugedag = as.factor(Ugedag),
     Hold = as.factor(Hold),
     season = as.factor(season),
-    Runde = as.factor(Runde),
-    
+
     # ---- Numeric variabler ----
     Tilskuertal = as.numeric(gsub("\\.", "", Tilskuertal)),
     mål_hjemme = as.numeric(mål_hjemme),
@@ -455,10 +453,8 @@ fuld_datasæt <- fuld_datasæt |>
     point = as.numeric(point),
     point_seneste_3 = as.numeric(point_seneste_3),
     helligdag_dummy = as.integer(helligdag_dummy),
+    tilskuere_sidste_modstander = as.numeric(tilskuere_sidste_modstander),
     
-    d10 = as.numeric(d10),
-    d7  = as.numeric(d7),
-    d3  = as.numeric(d3),
     d10_tilskuere = as.numeric(d10_tilskuere),
     d7_tilskuere  = as.numeric(d7_tilskuere),
     d3_tilskuere  = as.numeric(d3_tilskuere)
@@ -477,8 +473,8 @@ for(i in 1:nrow(fuld_datasæt)) {
   
   # filtrér vejrdata i vinduet
   vejr_subset <- vejr_wide |>
-    filter(datetime >= start_window,
-           datetime <= slut_window)
+    filter(datetime_hour >= start_window,
+           datetime_hour <= slut_window)
   
   # beregn gennemsnit
   kamp_vejr_window[[i]] <- tibble(
@@ -522,7 +518,6 @@ fuld_datasæt <- fuld_datasæt |>
 `10d_data` <- fuld_datasæt |>
   dplyr::select(
     Tilskuertal,
-    d10,
     d10_tilskuere,
     hold_kategori,
     Ugedag,
@@ -536,7 +531,6 @@ fuld_datasæt <- fuld_datasæt |>
 `7d_data` <- fuld_datasæt |>
   dplyr::select(
     Tilskuertal,
-    d7,
     d7_tilskuere,
     hold_kategori,
     Ugedag,
@@ -550,7 +544,6 @@ fuld_datasæt <- fuld_datasæt |>
 `3d_data` <- fuld_datasæt |>
   dplyr::select(
     Tilskuertal,
-    d3,
     d3_tilskuere,
     hold_kategori,
     Ugedag,
