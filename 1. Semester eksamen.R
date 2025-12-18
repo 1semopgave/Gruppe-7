@@ -9,7 +9,7 @@ pacman::p_load("dplyr", "tidyverse", "car", "magrittr", "nycflights13", "gapmind
 
 
 # Indhentning af datafiler fra VFF ----------------------------------------
-dplyr
+
   # RDS filer
 fcidk <- readRDS("data/fcidk.rds")
 vffkort01 <- readRDS("data/vffkort01.rds")
@@ -498,252 +498,155 @@ fuld_datasæt <- fuld_datasæt |>
   left_join(kamp_vejr_window, by = "datetime") |>
   na.omit()
 
-
 view(fuld_datasæt)
 
+#Opsætning af datasæt med variabler tilpasset tidshorisonterne
+fuld_datasæt <- fuld_datasæt |>
+  mutate(
+    måned = factor(lubridate::month(dato))
+  )
 
-# fuld_datasæt_model <- fuld_datasæt |>
-#   dplyr::select(-season, -Runde, -runde_nr, -dato, -vind, -temp, -nedbør,
-#     -d10, -d7, -d3
-#   )
-# view(fuld_datasæt_model)
-# str(fuld_datasæt_model)
+#1 måned før
+`1mdr_data` <- fuld_datasæt |>
+  dplyr::select(
+    Tilskuertal,
+    hold_kategori,
+    Ugedag,
+    helligdag_dummy,
+    måned,
+    tilskuere_sidste_modstander
+  ) |>
+  na.omit()
+
+#10 dage før
+`10d_data` <- fuld_datasæt |>
+  dplyr::select(
+    Tilskuertal,
+    d10,
+    d10_tilskuere,
+    hold_kategori,
+    Ugedag,
+    helligdag_dummy,
+    måned,
+    tilskuere_sidste_modstander
+  ) |>
+  na.omit()
+
+#7 dage før
+`7d_data` <- fuld_datasæt |>
+  dplyr::select(
+    Tilskuertal,
+    d7,
+    d7_tilskuere,
+    hold_kategori,
+    Ugedag,
+    helligdag_dummy,
+    måned,
+    tilskuere_sidste_modstander
+  ) |>
+  na.omit()
+
+#3 dage før
+`3d_data` <- fuld_datasæt |>
+  dplyr::select(
+    Tilskuertal,
+    d3,
+    d3_tilskuere,
+    hold_kategori,
+    Ugedag,
+    helligdag_dummy,
+    gns_temp,
+    gns_nedbør,
+    gns_vind,
+    tilskuere_sidste_modstander
+  ) |>
+  na.omit()
 
 
+#____________
+run_models <- function(data) {
 
-# Sætter seed, laver 70% trænigsdata --------
-
-set.seed(7)
-train <- sample(206, 145)
-
-
-lm.fit_stor <- lm(
-  Tilskuertal ~
-    vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
-    helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
-  data = fuld_datasæt_model, subset = train)
-
-
+  set.seed(7)
   
-# Flere måneder før
-    # Stor model
-fuld_datasæt <- fuld_datasæt |>   # måned som sæson/kalender-variabel
-    mutate(måned = lubridate::month(dato))
+  n <- nrow(data)
+  train <- sample(seq_len(n), size = floor(0.70 * n))
+  test  <- setdiff(seq_len(n), train)
   
-view(fuld_datasæt)
+  # ---------- Subset selection + K-fold ----------
+  k <- 5
+  folds <- sample(rep(1:k, length = n))
   
-set.seed(7)
-train <- sample(206, 145)
-
-  
-lm_mdr <- lm(
-    Tilskuertal ~ hold_kategori +
-    Ugedag + helligdag_dummy + måned + tilskuere_sidste_modstander,
-    data = fuld_datasæt, subset = train
+  cv.errors <- matrix(
+    NA, k, ncol(data) - 1
   )
   
-summary(lm_mdr)
-tilskuere_hat_måneder <- predict(lm_mdr, fuld_datasæt)
-
-
-mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat_måneder)[-train]^2) #mse
-rmse_måneder <- sqrt(mean((fuld_datasæt$Tilskuertal - tilskuere_hat_måneder)[-train]^2)) #rmse  
-
-    # LOOCV
-glm.lm_mdr_loocv <- glm(Tilskuertal ~ hold_kategori + tilskuere_sidste_modstander +
-    Ugedag + helligdag_dummy + måned,
-    data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.lm_mdr_loocv, K = nrow(fuld_datasæt))
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-
-    # K-fold validation
-glm.fit_stor_k5_måneder <- glm(Tilskuertal ~
-    hold_kategori + tilskuere_sidste_modstander + Ugedag + helligdag_dummy + måned,
-    data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_måneder, K = 5)
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-
-
-# 10 dage før
-    # Stor model
-
-lm_10d <- lm(
-  Tilskuertal ~ d10_tilskuere + d10 + hold_kategori + tilskuere_sidste_modstander +
-  Ugedag + helligdag_dummy + måned,
-  data = fuld_datasæt, subset = train
-)
-
-summary(lm_10d)
-tilskuere_hat_10 <- predict(lm_10d, fuld_datasæt)
-
-
-mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat_10)[-train]^2) #mse
-rmse_10d <- sqrt(mean((fuld_datasæt$Tilskuertal - tilskuere_hat_10)[-train]^2)) #rmse  
-
-# LOOCV
-glm.lm_10d_loocv <- glm(Tilskuertal ~ d10_tilskuere + d10 + hold_kategori +
-    tilskuere_sidste_modstander + Ugedag + helligdag_dummy + måned,
-    data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.lm_10d_loocv, K = nrow(fuld_datasæt))
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-
-# K-fold validation
-glm.fit_stor_k5_10d <- glm(Tilskuertal ~
-  d10_tilskuere + d10 + hold_kategori + tilskuere_sidste_modstander +
-  Ugedag + helligdag_dummy + måned,
-  data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_10d, K = 5)
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-
-# 7 dage før
-    # Stor model
-lm_7d <- lm(
-  Tilskuertal ~ d7_tilskuere + d7 + hold_kategori + tilskuere_sidste_modstander +
-    Ugedag + helligdag_dummy + måned,
-  data = fuld_datasæt, subset = train
-)
-
-summary(lm_7d)
-
-
-summary(lm_7d)
-tilskuere_hat_7 <- predict(lm_7d, fuld_datasæt)
-
-
-mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat_7)[-train]^2) #mse
-rmse_7d <- sqrt(mean((fuld_datasæt$Tilskuertal - tilskuere_hat_7)[-train]^2)) #rmse  
-
-
-# LOOCV
-glm.lm_7d_loocv <- glm(Tilskuertal ~ d7_tilskuere + d7 + hold_kategori +
-    tilskuere_sidste_modstander + Ugedag + helligdag_dummy + måned,
-    data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.lm_7d_loocv, K = nrow(fuld_datasæt))
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-# K-fold validation
-glm.fit_stor_k5_7d <- glm(Tilskuertal ~
-  d7_tilskuere + d7 + hold_kategori + tilskuere_sidste_modstander +
-  Ugedag + helligdag_dummy + måned,
-  data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_7d, K = 5)
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-
-
-# Stor model (3 dage før)
-lm_3d <- lm(
-  Tilskuertal ~ d3_tilskuere + d3 + hold_kategori + tilskuere_sidste_modstander +
-    Ugedag + helligdag_dummy + gns_temp + gns_nedbør + gns_vind,
-  data = fuld_datasæt, subset = train
-)
-
-summary(lm_3d)
-tilskuere_hat_3 <- predict(lm_3d, fuld_datasæt)
-
-
-mse_stor_validation <- mean((fuld_datasæt$Tilskuertal - tilskuere_hat_3)[-train]^2) #mse
-rmse_3d <- sqrt(mean((fuld_datasæt$Tilskuertal - tilskuere_hat_3)[-train]^2)) #rmse  
-
-
-# LOOCV
-glm.lm_3d_loocv <- glm(Tilskuertal ~ d3_tilskuere + d3 + hold_kategori + 
-  tilskuere_sidste_modstander + Ugedag + helligdag_dummy + 
-  gns_temp + gns_nedbør + gns_vind,
-  data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.lm_3d_loocv, K = nrow(fuld_datasæt))
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-# K-fold validation
-glm.fit_stor_k5_3d <- glm(Tilskuertal ~
-  d3_tilskuere + d3 + hold_kategori + tilskuere_sidste_modstander +
-  Ugedag + helligdag_dummy + gns_temp + gns_nedbør + gns_vind,
-  data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_3d, K = 5)
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-
-
-
-
-
-
-
-
-
-
-
-# Stor model
-lm.fit_stor43 <- lm(
-  Tilskuertal ~
-    vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
-    helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
-    data = fuld_datasæt_model, subset = train
-)
-
-summary(lm.fit_stor43)
-tilskuere_hat <- predict(lm.fit_stor43, fuld_datasæt_model)
-
-mse_stor_validation <- mean((fuld_datasæt_model$Tilskuertal - tilskuere_hat)[-train]^2) #mse
-sqrt(mse_stor_validation <- mean((fuld_datasæt_model$Tilskuertal - tilskuere_hat)[-train]^2)) #rmse
-
-
-# lm.fit_stor44 <- lm(
-#   Tilskuertal ~ . ,
-#   data = fuld_datasæt_model, subset = train
-# )
-
-
-summary(lm.fit_stor44)
-tilskuere_hat <- predict(lm.fit_stor44, fuld_datasæt_model)
-
-mse_stor_validation <- mean((fuld_datasæt_model$Tilskuertal - tilskuere_hat)[-train]^2) #mse
-sqrt(mse_stor_validation <- mean((fuld_datasæt_model$Tilskuertal - tilskuere_hat)[-train]^2)) #rmse
-
-
+  for (j in 1:k) {
+    best.fit <- regsubsets(
+      Tilskuertal ~ .,
+      data = data[folds != j, ],
+      nvmax = ncol(data) - 1
+    )
+    
+    for (i in 1:(ncol(data) - 1)) {
+      mat <- model.matrix(Tilskuertal ~ ., data[folds == j, ])
+      coefi <- coef(best.fit, id = i)
+      pred <- mat[, names(coefi)] %*% coefi
+      cv.errors[j, i] <- mean(
+        (data$Tilskuertal[folds == j] - pred)^2
+      )
+    }
+  }
   
+  mean_mse <- colMeans(cv.errors)
+  best_size <- which.min(mean_mse)
+  rmse_subset <- sqrt(mean_mse[best_size])
+  
+  # ---------- LOOCV ----------
+  glm_fit <- glm(Tilskuertal ~ ., data = data)
+  loocv <- cv.glm(data, glm_fit, K = n)
+  rmse_loocv <- sqrt(loocv$delta[1])
+  
+  # ---------- Ridge & Lasso ----------
+  x <- model.matrix(Tilskuertal ~ ., data)[, -1]
+  y <- data$Tilskuertal
+  
+  lambda_grid <- 10^seq(10, -2, length = 100)
+  
+  ridge_cv <- cv.glmnet(x[train, ], y[train], alpha = 0)
+  ridge_pred <- predict(
+    ridge_cv,
+    s = ridge_cv$lambda.min,
+    newx = x[test, ]
+  )
+  rmse_ridge <- sqrt(mean((ridge_pred - y[test])^2))
+  
+  lasso_cv <- cv.glmnet(x[train, ], y[train], alpha = 1)
+  lasso_pred <- predict(
+    lasso_cv,
+    s = lasso_cv$lambda.min,
+    newx = x[test, ]
+  )
+  rmse_lasso <- sqrt(mean((lasso_pred - y[test])^2))
+  
+  return(list(
+    rmse_subset = rmse_subset,
+    rmse_loocv  = rmse_loocv,
+    rmse_ridge  = rmse_ridge,
+    rmse_lasso  = rmse_lasso
+  ))
+}
 
-# LOOCV
-glm.fit_stor_loocv1 <- glm(Tilskuertal ~
-    vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
-    helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
-    data = fuld_datasæt)
+#_____________
+result_1mdr <- run_models(`1mdr_data`)
+result_10d  <- run_models(`10d_data`)
+result_7d   <- run_models(`7d_data`)
+result_3d   <- run_models(`3d_data`)
+#_________
+results <- rbind(
+  `1 måned` = unlist(result_1mdr),
+  `10 dage` = unlist(result_10d),
+  `7 dage`  = unlist(result_7d),
+  `3 dage`  = unlist(result_3d)
+)
 
-cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_loocv1, K = nrow(fuld_datasæt))
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-
-
-# K-fold validation
-glm.fit_stor_k5_1 <- glm(Tilskuertal ~
-    vff_sejr + sejre_seneste_3 + maal_seneste_3 + point + point_seneste_3 +
-    helligdag_dummy + gns_vind + gns_temp + gns_nedbør,
-    data = fuld_datasæt)
-
-cv.err <- cv.glm(fuld_datasæt, glm.fit_stor_k5_1, K = 5)
-cv.err$delta #mse
-sqrt(cv.err$delta) #rmse
-
-
-
+results
