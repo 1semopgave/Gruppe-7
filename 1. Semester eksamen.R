@@ -37,9 +37,9 @@ for (y in 2003:2026) {
 
 # Kør denne linje for at se data fra Superstats
 superstats_program
+
 # Superstats gemmes til RDS -----------------------------------------------
 saveRDS(superstats_program, file = "data/superstats_program.rds")
-
 # Load RDS
 superstats_program <- readRDS("data/superstats_program.rds")
 
@@ -97,9 +97,7 @@ superstats_dataframe <- superstats_dataframe |>
     sejre_seneste_3 = lag(vff_sejr, 1) + lag(vff_sejr, 2) + lag(vff_sejr, 3),
     mål_seneste_3   = lag(mål_hjemme, 1) + lag(mål_hjemme, 2) + lag(mål_hjemme, 3),
     point_seneste_3 = lag(point, 1) + lag(point, 2) + lag(point, 3)
-  )
-  # Vi har her dannet variabler der viser hvor mange sejre, mål og point VFF har fået i de seneste 3 hjemmekampe
-
+  ) # Vi har her dannet variabler der viser hvor mange sejre, mål og point VFF har fået i de seneste 3 hjemmekampe
 
 # Her laver vi dato, tid og sæson variabler
 superstats_dataframe <- superstats_dataframe |>
@@ -146,8 +144,7 @@ view(superstats_clean)
 
 
 # Helligdage fra Nager.Date -----------------------------------------------
-
-#Først laver vi en container, som vi kan smide vores data ned i
+  #Først laver vi en container, som vi kan smide vores data ned i
 helligdage_list <- list()
 
 # Her laver vi en løkke, som henter data fra nager ned for hvert år
@@ -197,7 +194,7 @@ dmi_info_url <- "metObs/collections/observation/items?"
 api_key <- Sys.getenv("MY_API_KEY")
 
 # Funktion
-  hent_dmi_data <- function(station_id, parameter_id, start_date, end_date, limit = 50000) {
+hent_dmi_data <- function(station_id, parameter_id, start_date, end_date, limit = 50000) {
   query <- paste0(
     "stationId=", station_id,
     "&parameterId=", parameter_id,
@@ -237,8 +234,7 @@ api_key <- Sys.getenv("MY_API_KEY")
   return(df_selected)
 }
 
-  
-# År der skal hentes
+# År og station der skal hentes, samt en container til vores data
 år <- 2003:2025
 karup <- "06060"
 vejr_list <- list()
@@ -313,7 +309,6 @@ vejr_wide <- vejr_all |>
   dplyr::select(datetime_hour, dplyr::everything(), -datetime, -år, -observationstidspunkt, -datotid_utc)
 
 view(vejr_wide)
-
 
 
 # Joining af datasæt ------------------------------------------------------
@@ -404,6 +399,7 @@ fuld_datasæt <- fuld_datasæt |>
   ugedag = as.factor(ugedag),
   hold = as.factor(hold),
   sæson = as.factor(sæson),
+  hold_kategori = as.factor(hold_kategori),
     # ---- Numeric variabler ----
   tilskuertal = as.numeric(gsub("\\.", "", tilskuertal)),
   mål_hjemme = as.numeric(mål_hjemme),
@@ -425,10 +421,9 @@ view(fuld_datasæt)
 
 
 #__________Esktra tilføjelse af variabeler______________________________________
-
 kamp_vejr_window <- list()
-
 # Vi danner en variable med gennesnittet af vejret 3 timer før kampstart til slutfløjt
+kamp_vejr_window <- list()
 for(i in 1:nrow(fuld_datasæt)) {
   
   kamp_tid <- fuld_datasæt$datetime[i]
@@ -449,7 +444,7 @@ for(i in 1:nrow(fuld_datasæt)) {
   )
 }
 
-# slå alle rækker sammen
+# slår alle rækker sammen
 kamp_vejr_window <- bind_rows(kamp_vejr_window)
 
 # Sæt på fulde datasæt, og fjerne 2002, da vi ingen dmi data har
@@ -507,191 +502,189 @@ summary(lm(tilskuertal ~ ., data = data_3d))
 
 
 # Modeller ----------------------------------------------------------------
-kør_alle_modeller <- function(data, seed = 7, k = 5) {
+# ------------------------- Split (train/test) -------------------------
+split_data <- function(data, seed = 7, k = 5) {
   set.seed(seed)
-  
-  # ---- Split (train/test) ----
   n <- nrow(data)
+  
   train_opdeling <- sample(seq_len(n), size = floor(0.70 * n))
   test_opdeling  <- setdiff(seq_len(n), train_opdeling)
-  
   train <- data[train_opdeling, ]
   test  <- data[test_opdeling, ]
   
-  # ---- Stor LM (test RMSE) ----
-  lm_fit <- lm(tilskuertal ~ ., data = train)
-  lm_pred <- predict(lm_fit, newdata = test)
-  rmse_lm_test <- sqrt(mean((test$tilskuertal - lm_pred)^2))
+  set.seed(seed)
+  folds <- sample(rep(1:k, length = nrow(train)))
   
-  # ---- Ridge / Lasso (CV på train + test RMSE) ----
+  list(train = train, test = test, folds = folds, k = k, seed = seed)
+}
+
+split_1mdr <- split_data(data_1_mdr)
+split_10d  <- split_data(data_10d)
+split_7d   <- split_data(data_7d)
+split_3d   <- split_data(data_3d)
+
+# ------------------------- Stor LM (test RMSE) -------------------------
+model_stor_lm <- function(train, test) {
+  fit <- lm(tilskuertal ~ ., data = train)
+  pred <- predict(fit, newdata = test)
+  
+  rmse_test <- sqrt(mean((test$tilskuertal - pred)^2))
+  
+  list(rmse_test = rmse_test, fit = fit)
+}
+
+# Kører lineær regression for hver tidshorisont
+lm_1mdr <- model_stor_lm(split_1mdr$train, split_1mdr$test)
+lm_10d  <- model_stor_lm(split_10d$train,  split_10d$test)
+lm_7d   <- model_stor_lm(split_7d$train,   split_7d$test)
+lm_3d   <- model_stor_lm(split_3d$train,   split_3d$test)
+
+# Laver en tibble for overblik 
+lm_table <- tibble::tibble(
+  tidshorisont = c("1 måned", "10 dage", "7 dage", "3 dage"),
+  lm_rmse_test = c(lm_1mdr$rmse_test, lm_10d$rmse_test, lm_7d$rmse_test, lm_3d$rmse_test)
+)
+
+lm_table
+
+# ---------------- Ridge / Lasso (CV på train + test RMSE) ----------------
+model_ridge_lasso <- function(train, test, seed = 7, k = 5) {
   x_train <- model.matrix(tilskuertal ~ ., train)[, -1]
   y_train <- train$tilskuertal
   x_test  <- model.matrix(tilskuertal ~ ., test)[, -1]
   y_test  <- test$tilskuertal
   
-  # ridge
+  grid <- 10^seq(10, -2, length = 100)
+  
+  # Ridge
   set.seed(seed)
-  ridge_cv <- cv.glmnet(x_train, y_train, alpha = 0, nfolds = k)
-  bestlam_ridge <- ridge_cv$lambda.min
-  rmse_ridge_cv <- sqrt(min(ridge_cv$cvm))
-  ridge_pred <- predict(ridge_cv, s = bestlam_ridge, newx = x_test)
-  rmse_ridge_test <- sqrt(mean((y_test - ridge_pred)^2))
+  ridge_cv <- glmnet::cv.glmnet(x_train, y_train, alpha = 0, lambda = grid, nfolds = k)
+  bestlam_ridge <- ridge_cv$lambda.min # Finde den bedste lambda
+  rmse_ridge_cv <- sqrt(min(ridge_cv$cvm)) # Finde RMSE på træning ridge cross-validation med den bedste lambda
+  ridge_pred <- predict(ridge_cv, s = bestlam_ridge, newx = x_test) # Teste på test data
+  rmse_ridge_test <- sqrt(mean((y_test - ridge_pred)^2)) # RMSE på test data
   
-  # lasso
+  # Lasso
   set.seed(seed)
-  lasso_cv <- cv.glmnet(x_train, y_train, alpha = 1, nfolds = k)
-  bestlam_lasso <- lasso_cv$lambda.min
-  rmse_lasso_cv <- sqrt(min(lasso_cv$cvm))
-  lasso_pred <- predict(lasso_cv, s = bestlam_lasso, newx = x_test)
-  rmse_lasso_test <- sqrt(mean((y_test - lasso_pred)^2))
+  lasso_cv <- glmnet::cv.glmnet(x_train, y_train, alpha = 1, lambda = grid, nfolds = k)
+  bestlam_lasso <- lasso_cv$lambda.min # Finde den bedste lambda
+  rmse_lasso_cv <- sqrt(min(lasso_cv$cvm)) # Finde RMSE på træning lasso cross-validation med den bedste lambda
+  lasso_pred <- predict(lasso_cv, s = bestlam_lasso, newx = x_test) # Teste på test data
+  rmse_lasso_test <- sqrt(mean((y_test - lasso_pred)^2)) # RMSE på test data
   
-  
-  # ---- Best subset (K-fold CV på train + test RMSE) ----
+  list(
+    ridge = list(rmse_cv = rmse_ridge_cv, rmse_test = rmse_ridge_test, bestlam = bestlam_ridge),
+    lasso = list(rmse_cv = rmse_lasso_cv, rmse_test = rmse_lasso_test, bestlam = bestlam_lasso)
+  )
+}
+
+# Kører ridge- og lasso-modellerne for hver tidshorisont
+rl_1mdr <- model_ridge_lasso(split_1mdr$train, split_1mdr$test, k = split_1mdr$k)
+rl_10d  <- model_ridge_lasso(split_10d$train,  split_10d$test,  k = split_10d$k)
+rl_7d   <- model_ridge_lasso(split_7d$train,   split_7d$test,   k = split_7d$k)
+rl_3d   <- model_ridge_lasso(split_3d$train,   split_3d$test,   k = split_3d$k)
+
+# Laver en tibble for overblik 
+ridge_lasso_table <- tibble::tibble(
+  tidshorisont = c("1 måned", "10 dage", "7 dage", "3 dage"),
+  ridge_rmse_cv   = c(rl_1mdr$ridge$rmse_cv,   rl_10d$ridge$rmse_cv,   rl_7d$ridge$rmse_cv,   rl_3d$ridge$rmse_cv),
+  ridge_rmse_test = c(rl_1mdr$ridge$rmse_test, rl_10d$ridge$rmse_test, rl_7d$ridge$rmse_test, rl_3d$ridge$rmse_test),
+  lasso_rmse_cv   = c(rl_1mdr$lasso$rmse_cv,   rl_10d$lasso$rmse_cv,   rl_7d$lasso$rmse_cv,   rl_3d$lasso$rmse_cv),
+  lasso_rmse_test = c(rl_1mdr$lasso$rmse_test, rl_10d$lasso$rmse_test, rl_7d$lasso$rmse_test, rl_3d$lasso$rmse_test)
+)
+
+ridge_lasso_table
+
+# --------------- Best subset (K-fold CV på train + test RMSE) ---------------
+predict_regsubsets <- function(object, newdata, form, id) {
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  as.numeric(mat[, xvars, drop = FALSE] %*% coefi)
+}
+
+model_subset <- function(train, test, folds, k = 5) {
   form <- tilskuertal ~ .
-  predict_regsubsets <- function(object, newdata, form, id) {
-    mat <- model.matrix(form, newdata)
-    coefi <- coef(object, id = id)
-    xvars <- names(coefi)
-    as.numeric(mat[, xvars, drop = FALSE] %*% coefi)
-  }
+  p <- ncol(train) - 1
   
-  
-  set.seed(seed)
-  folds <- sample(rep(1:k, length = nrow(train)))
-  
-  cv.errors <- matrix(NA, k, ncol(train) - 1)
+  cv.errors <- matrix(NA, k, p)
   
   for (j in 1:k) {
-    best.fit <- leaps::regsubsets(form, data = train[folds != j, ], nvmax = ncol(train) - 1)
-    for (i in 1:(ncol(train) - 1)) {
-      pred <- predict_regsubsets(best.fit, train[folds == j, ], form = form, id = i)
+    best.fit <- leaps::regsubsets(form, data = train[folds != j, ], nvmax = p)
+    for (i in 1:p) {
+      pred <- predict_regsubsets(best.fit, train[folds == j, ], form, id = i)
       cv.errors[j, i] <- mean((train$tilskuertal[folds == j] - pred)^2)
     }
   }
   
   mean_mse <- colMeans(cv.errors)
   best_size <- which.min(mean_mse)
-  rmse_subset_cv <- sqrt(min(mean_mse))
+  rmse_cv <- sqrt(min(mean_mse))
   
-  reg_best <- leaps::regsubsets(form, data = train, nvmax = ncol(train) - 1)
-  subset_pred <- predict_regsubsets(reg_best, test, form = form, id = best_size)
-  rmse_subset_test <- sqrt(mean((test$tilskuertal - subset_pred)^2))
-  
-  subset_coef <- coef(reg_best, id = best_size)
+  reg_best <- leaps::regsubsets(form, data = train, nvmax = p)
+  pred_test <- predict_regsubsets(reg_best, test, form, id = best_size)
+  rmse_test <- sqrt(mean((test$tilskuertal - pred_test)^2))
   
   list(
-    rmse_lm_test     = rmse_lm_test,
-    rmse_ridge_cv    = rmse_ridge_cv,
-    rmse_ridge_test  = rmse_ridge_test,
-    rmse_lasso_cv    = rmse_lasso_cv,
-    rmse_lasso_test  = rmse_lasso_test,
-    rmse_subset_cv   = rmse_subset_cv,
-    rmse_subset_test = rmse_subset_test,
-    best_size        = best_size,
-    subset_coef      = subset_coef
+    rmse_cv = rmse_cv,
+    rmse_test = rmse_test,
+    best_size = best_size,
+    coef = coef(reg_best, id = best_size)
   )
 }
 
-res_1mdr <- kør_alle_modeller(data_1_mdr)
-res_10d  <- kør_alle_modeller(data_10d)
-res_7d   <- kør_alle_modeller(data_7d)
-res_3d   <- kør_alle_modeller(data_3d)
+# Kører best subset og k-fold cross validation for hver tidshorisont
+sub_1mdr <- model_subset(split_1mdr$train, split_1mdr$test, split_1mdr$folds, k = split_1mdr$k)
+sub_10d  <- model_subset(split_10d$train,  split_10d$test,  split_10d$folds,  k = split_10d$k)
+sub_7d   <- model_subset(split_7d$train,   split_7d$test,   split_7d$folds,   k = split_7d$k)
+sub_3d   <- model_subset(split_3d$train,   split_3d$test,   split_3d$folds,   k = split_3d$k)
 
-
-rmse_table <- tibble::tibble(
+# Laver en tibble for overblik 
+subset_table <- tibble::tibble(
   tidshorisont = c("1 måned", "10 dage", "7 dage", "3 dage"),
-  LM_test_rmse = c(res_1mdr$rmse_lm_test,     res_10d$rmse_lm_test,     res_7d$rmse_lm_test,     res_3d$rmse_lm_test),
-  Ridge_CV_    = c(res_1mdr$rmse_ridge_cv,    res_10d$rmse_ridge_cv,    res_7d$rmse_ridge_cv,    res_3d$rmse_ridge_cv),
-  Ridge_test   = c(res_1mdr$rmse_ridge_test,  res_10d$rmse_ridge_test,  res_7d$rmse_ridge_test,  res_3d$rmse_ridge_test),
-  Lasso_CV     = c(res_1mdr$rmse_lasso_cv,    res_10d$rmse_lasso_cv,    res_7d$rmse_lasso_cv,    res_3d$rmse_lasso_cv),
-  Lasso_test   = c(res_1mdr$rmse_lasso_test,  res_10d$rmse_lasso_test,  res_7d$rmse_lasso_test,  res_3d$rmse_lasso_test),
-  Subset_CV    = c(res_1mdr$rmse_subset_cv,   res_10d$rmse_subset_cv,   res_7d$rmse_subset_cv,   res_3d$rmse_subset_cv),
-  Subset_test  = c(res_1mdr$rmse_subset_test, res_10d$rmse_subset_test, res_7d$rmse_subset_test, res_3d$rmse_subset_test),
-  best_size    = c(res_1mdr$best_size,        res_10d$best_size,        res_7d$best_size,        res_3d$best_size)
+  subset_rmse_cv   = c(sub_1mdr$rmse_cv, sub_10d$rmse_cv, sub_7d$rmse_cv, sub_3d$rmse_cv),
+  subset_rmse_test = c(sub_1mdr$rmse_test, sub_10d$rmse_test, sub_7d$rmse_test, sub_3d$rmse_test),
+  best_size        = c(sub_1mdr$best_size, sub_10d$best_size, sub_7d$best_size, sub_3d$best_size)
 )
+subset_table
 
-rmse_table
+#------------------ Laver left join for at samle dem alle ------------------
+rmse_table_final <- lm_table |>
+  dplyr::left_join(ridge_lasso_table, by = "tidshorisont") |>
+  dplyr::left_join(subset_table,      by = "tidshorisont")
 
+rmse_table_final
 
-  
 
 # Best/ worst case scenario -----------------------------------------------
-best_case_7d <- data.frame(
-  d7_tilskuere = quantile(`7d_data`$d7_tilskuere, 0.90),
-  hold_kategori = factor("A", levels = c("A","B","C")),
-  Ugedag = factor("Søn", levels = levels(`7d_data`$Ugedag)),
-  helligdag_dummy = 0,
-  måned = factor(2, levels = levels(`7d_data`$måned)),
-  tilskuere_sidste_modstander =
-    quantile(`7d_data`$tilskuere_sidste_modstander, 0.90)
-)
+worst <- as.numeric(quantile(data_1_mdr$tilskuere_sidste_modstander, 0.10, na.rm = TRUE))
+best <- as.numeric(quantile(data_1_mdr$tilskuere_sidste_modstander, 0.90, na.rm = TRUE))
 
-pred_best_7d <- predict(lm_7d, newdata = best_case_7d)
-pred_best_7d
-
-
-
-`7d_data`$tilskuere_sidste_modstander
-
-
-
-
-fuld_datasæt |>
-  dplyr::filter(Hold == "VFF-BIF") |>
-  dplyr::arrange(desc(dato)) |>
-  dplyr::select(dato, Tilskuertal)
-
-
-
-
-
-# ------------------------------------------------------------
-# Prædiktion (1 måned) på Viborg FF vs Brøndby IF
-# ------------------------------------------------------------
-
-# Sikr korrekt datatype
-`1mdr_data` <- `1mdr_data` |>
-  dplyr::mutate(
-    hold_kategori = factor(hold_kategori, levels = c("A", "B", "C"))
-  )
-
-# Find min og max historisk tilskuertal mod Brøndby
-broendby_tilskuere_range <- fuld_datasæt |>
-  dplyr::filter(Hold == "VFF-BIF") |>
-  dplyr::summarise(
-    min_tilskuere = min(Tilskuertal, na.rm = TRUE),
-    max_tilskuere = max(Tilskuertal, na.rm = TRUE)
-  )
-
-# Best/worst-case newdata for Brøndby kampen
-broendby_scenarios <- tibble(
+brøndby_scenarier <- tibble::tibble(
   scenario = c("Worst-case", "Best-case"),
-  hold_kategori = factor(c("A", "A"), levels = levels(`1mdr_data`$hold_kategori)),
-  weekend = c(1, 1),
-  helligdag_dummy = c(0, 0),
-  måned = factor(c(2, 2), levels = levels(`1mdr_data`$måned)),
-  tilskuere_sidste_modstander = c(
-    broendby_tilskuere_range$min_tilskuere,
-    broendby_tilskuere_range$max_tilskuere
-  )
+  hold_kategori = factor(c("A","A"), levels = levels(data_1_mdr$hold_kategori)), # Brøndby er i hold kategori A
+  weekend = c(1,1),  # Det er søndag, så derfor weekend
+  helligdag_dummy = c(0,0), # Det er ikke helligdag
+  måned = factor(c(2,2), levels = levels(data_1_mdr$måned)), # Februar
+  tidspunkt = factor(c("Aften","Aften"), levels = levels(data_1_mdr$tidspunkt)), # Kampen spilles kl 18
+  tilskuere_sidste_modstander = c(worst, best)
 )
 
-# Træn 1-måned-modellen
-best_model_1mdr <- lm(
-  Tilskuertal ~
-    hold_kategori +
-    weekend +
-    helligdag_dummy +
-    måned +
-    tilskuere_sidste_modstander,
-  data = `1mdr_data`
+fcn_scenarier <- data.frame(
+  scenario = c("Worst-case", "Best-case"),
+  hold_kategori = factor(c("C","C"), levels = levels(data_1_mdr$hold_kategori)), #fcn er i hold kategori C
+  weekend = c(1, 1), # Det er søndag, så derfor weekend
+  helligdag_dummy = c(0, 0), # Det er ikke helligdag
+  måned = factor(c(3, 3), levels = levels(data_1_mdr$måned)), # Marts
+  tidspunkt = factor(c("Aften","Aften"), levels = levels(data_1_mdr$tidspunkt)), # Kampen spilles kl 18
+  tilskuere_sidste_modstander = c(worst, best)
 )
 
-# Prædiktion for Brøndby
-broendby_scenarios$pred_tilskuertal <- predict(
-  best_model_1mdr,
-  newdata = broendby_scenarios
-)
 
-broendby_scenarios
+lm_1mdr <- lm(tilskuertal ~ ., data = data_1_mdr)
 
+brøndby_scenarier$pred <- predict(lm_1mdr, newdata = brøndby_scenarier)
+fcn_scenarier$pred      <- predict(lm_1mdr, newdata = fcn_scenarier)
+
+brøndby_scenarier
+fcn_scenarier
