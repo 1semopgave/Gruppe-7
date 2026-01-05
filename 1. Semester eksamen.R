@@ -421,7 +421,6 @@ view(fuld_datasæt)
 
 
 #__________Esktra tilføjelse af variabeler______________________________________
-kamp_vejr_window <- list()
 # Vi danner en variable med gennesnittet af vejret 3 timer før kampstart til slutfløjt
 kamp_vejr_window <- list()
 for(i in 1:nrow(fuld_datasæt)) {
@@ -486,7 +485,7 @@ summary(lm(tilskuertal ~ ., data = data_10d))
 data_7d <- fuld_datasæt |>
   dplyr::select(tilskuertal, d7_tilskuere, hold_kategori, weekend,
   helligdag_dummy, måned, tilskuere_sidste_modstander, tidspunkt,
-  sejre_seneste_3, mål_seneste_3
+  sejre_seneste_3, mål_seneste_3, gns_temp, gns_nedbør, gns_vind,
   ) |>
   na.omit()
 summary(lm(tilskuertal ~ ., data = data_7d))
@@ -649,11 +648,11 @@ subset_table <- tibble::tibble(
 subset_table
 
 #------------------ Laver left join for at samle dem alle ------------------
-rmse_table_final <- lm_table |>
+rmse_table_final1 <- lm_table |>
   dplyr::left_join(ridge_lasso_table, by = "tidshorisont") |>
   dplyr::left_join(subset_table,      by = "tidshorisont")
 
-rmse_table_final
+rmse_table_final1
 
 
 # Best/ worst case scenario -----------------------------------------------
