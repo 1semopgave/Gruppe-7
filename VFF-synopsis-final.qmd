@@ -1,0 +1,1200 @@
+---
+lang: da
+format:
+  pdf:
+    documentclass: article
+    toc: false
+    toc-title: Indholdsfortegnelse
+    toc-depth: 3
+    number-sections: true
+    number-depth: 3
+    titlepage: true
+    lof: false
+    lot: false
+bibliography: VFF_projekt.bib
+header-includes:
+  - \usepackage[a4paper, top=30mm, bottom=30mm, left=20mm, right=20mm, heightrounded]{geometry}
+  - \usepackage{booktabs}
+  - \usepackage{makecell}
+  - \usepackage{pdfpages}
+  - \AtBeginDocument{\includepdf[pages={1}]{vff_forside.pdf}}
+crossref:
+  fig-prefix: ""
+  sec-prefix: ""
+  tbl-prefix: ""
+  eq-prefix: ""
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+```{r}
+#| label: Setup
+#| echo: false
+#| eval: true
+
+# Options
+options(OutDec = ",")
+
+# Pakker
+pacman::p_load("knitr", "tinytex", "tidyverse", "dplyr", "magrittr", "lubridate",
+               "tidyr", "stringr", "httr", "jsonlite", "rvest", "DBI", "RSQLite", 
+               "leaps", "glmnet", "boot", "caret", "hms",
+               "broom", "pander", "modelr","XML","testthat", "MASS", "class", 
+               "glmnet", "pls","usethis")
+```
+
+\pagenumbering{gobble} 
+\tableofcontents 
+\newpage 
+\listoffigures 
+\newpage 
+\pagenumbering{arabic} 
+\setcounter{page}{1}
+
+## Problemstilling 
+Fodboldklubber som Viborg FF i sport- og underholdningsbranchen er i 
+stigende grad afhængige af datadrevne beslutningsprocesser i forbindelse med 
+planlægning og ressourceforbrug til hjemmekampe. Viborg FF oplever blandt andet 
+usikkerhed i forhold til det forventede tilskuertal forud for hjemmekampe, 
+hvilket kan skabe udfordringer i planlægningen af bemanding, vareindkøb og 
+øvrige ressourcer og dermed medføre negative økonomiske konsekvenser for klubben[@VFF_transskriberede_interview].
+
+Klubben har internt indsamlet historiske data om billetsalg, som udgør et 
+potentielt datagrundlag for at arbejde mere systematisk med forudsigelser af 
+tilskuertal forud for kampstart.
+
+På baggrund af det, opstår der behovet for at undersøge, hvordan en mere 
+datadrevet tilgang kan understøtte forudsigelse af tilskuere og samtidigt 
+tage højde for klubbens nuværende datamodenhed.
+
+
+### Problemformulering
+Hvordan kan Viborg FF ved hjælp af interne klubdata og eksterne datakilder 
+anvende machine learning til at udvikle og udvælge modeller, der kan forudsige 
+antallet af tilskuertal på forskellige tidspunkter? Og hvordan kan sådan en 
+løsning integreres i praksis, hvor der samtidig tages højde for klubbens 
+nuværende datamodenhed?
+
+## Afgrænsning
+Opgaven afgrænses til Viborg FF’s hjemmekampe i Superligaen fra 2003 og 
+frem, da dette er den periode, hvor de historiske data er konsistente og 
+tilgængelige. Derudover er sæsonerne under COVID-19 restriktionerne ekskluderet, 
+da de vurderes som atypiske og derfor ikke repræsentative for normale 
+tilskuerforhold.
+
+### Begrænsning
+Analysen er begrænset af, at forklarende variabler som markedsføring, kampens 
+betydning og tv-transmission ikke indgår, selvom disse og andre kan påvirke 
+tilskuertallet.
+
+Vejrforhold er målt som gennemsnit omkring kampstart, hvilket kan udjævne 
+ekstreme forhold og undervurdere vejrets betydning for tilskuertallet.
+
+Brugen af billetsalgsdata tæt på kampdagen medfører en bias, da modellen bliver 
+præcis ved at anvende information tæt på det faktiske tilskuertal og derfor i 
+mindre grad afdækker de bagvedliggende drivkræfter.
+
+
+## Videnskabsteori og metode
+### Paradigmevalg
+Videnskabsteoretisk tager opgaven udgangspunkt i et positivistisk paradigme, 
+hvor virkeligheden forstås som objektiv og målbar. Paradigmet blev valgt på 
+baggrund af opgavens formål om at analysere kvantitative sammenhænge i 
+historiske data udleveret af Viborg FF, samt eksternt indhentede data. 
+
+Ontologisk forstås tilskuertallet udelukkende som observerede data, og ikke 
+individernes personlige oplevelser eller motivationer. Denne måde at forstå 
+ontologien hænger tæt sammen med epistemologien, hvor viden bør opnås gennem 
+måling og metodologisk analyse af mønstre og kvantitative sammenhænge, for at 
+undersøge faktorernes reliabilitet og validitet, hvilket metodologisk kommer 
+til udtryk gennem brugen af kvantitative analyser. [@liv_egholm_2014]
+
+### Undersøgelsesdesign
+Opgaven er tilrettelagt ud fra et deduktivt undersøgelsesdesign, hvor der 
+arbejdes ud fra eksisterende teori om faktorer, der antages at have indflydelse 
+på tilskuertallet til kampdagene. Teorien antager, at vejrforhold og helligdage har 
+betydning for tilskuertallet på kampdagen, som danner grundlaget for 
+variabeludvælgelsen senere i analysen.
+
+### Empiri
+Empirisk bygger opgaven på både primære og sekundære data. Den primære empiri 
+består af et semistruktureret interview med medarbejdere i Viborg FF, som 
+anvendes til at forstå klubbens nuværende datamodenhed og data governance. 
+Interviewet bruges til at give kontekst og forståelse, men ikke til at forklare årsagssammenhænge.
+
+Den sekundære empiri består af historiske, kvantitative data om tilskuertal, 
+billetsalg og kampinformation stillet til rådighed af Viborg FF, suppleret med 
+eksterne datakilder som Superstats.dk for modstanderinformation, DMI.dk for 
+vejrforhold og date.nager.dk for helligedage [@superstatsweb], [@dmiweb], [@helligdageweb], [@VFF_vffkort01]. 
+
+Kombinationen af disse datakilder gør det muligt at belyse de parametre,
+som ifølge den eksisterende teori antages at have indflydelse
+på tilskuertallet, der herefter undersøges deduktivt gennem analysen.
+
+### Databehandling og metode
+Både de interne og eksterne data er efterfølgende blevet kombineret, renset og 
+struktureret i et samlet dataframe, for at skabe et bedre overblik, som herefter 
+nemt kan bruges til udvikling af modeller samt sammenligning af RMSE af hver model.
+
+Som supplerende metode i den indledende fase er der anvendt CRISP-DM Model til 
+undersøgelse af tilskuertal. I forbindelse med Business understanding er der 
+taget udgangspunkt i Viborg FF’s behov for at kunne forudsige antallet af tilskuertal 
+på forskellige tidspunkter før kampdag, mens Data Understanding og Data 
+Preparation dækker analysedelen og klargøring af data i vores opgave. 
+I Modeling og Evaluation faserne er der lavet og sammenlignet lineære 
+regressionsmodeller for forskellige tidshorisonter, som evalueres ved hjælp af 
+RMSE, hvorefter resultaterne omsættes til et beslutningsgrundlag.[@fig-crispdm]
+
+
+## Analyse
+### Datamodenhed og data governance i Viborg FF
+Analysen af Viborg FF’s datamodenhed tager udgangspunkt i teori om 
+datamodenhed og data governance samt indsigter fra de gennemførte interviews. 
+Interviewene er blevet transskriberet med AI og anvendt som henvisning til 
+citater.
+
+Interviewene viser, at forudsigelser og vurderinger ofte baseres på erfaring og 
+historiske gennemsnit i stedet for machine learing modeller. Dette afspejles i 
+udsagn som: “Det er stadigvæk lidt en følelse frem for fakta” [@VFF_transskriberede_interview],
+[@klang_ai], hvilket indikerer, at data i begrænset omfang bruges til at 
+forudsige fremtidige forhold.
+
+Dataarbejdet i Viborg FF foregår primært som projektarbejde frem for faste 
+arbejdsgange, hvilket peger på en uformel organisering. Det betyder, at
+koordineringen i høj grad sker gennem løbende dialog mellem de
+involverede medarbejdere. Dette afspejles i udsagnet: “Det er også meget
+projektbaseret arbejde. Vi tager ind af afdelingen, og så begynder vi at arbejde
+med det” [@VFF_transskriberede_interview]. Denne arbejdsform  understøtter
+fleksibilitet, men det viser også, at ansvaret for data primært  ligger hos få
+medarbejdere, mens ejerskab og fælles standarder endnu ikke er tydeligt
+defineret [@dgi_framework]. Dette afspejles i udsagnet: “Der tror jeg  ikke helt,
+at vi er der, hvor vi fast kan sige, at det er den her person”[@VFF_transskriberede_interview].
+
+Samtidig arbejdes der aktivt på at reducere personafhængighed, da 
+arbejdsprocesser er centraliserede blandt medarbejdere, hvilket kommer 
+til udtryk i udsagnet: “Data må ikke forsvinde, bare fordi en medarbejder eller 
+praktikant stopper” [@VFF_transskriberede_interview].
+
+Samlet set vurderes Viborg FF’s datamodenhedsniveau på 1-2, idet data primært 
+anvendes til overblik frem for systematiske analyser[@datamodenhed_alexandra].
+Beslutninger baseres ofte på erfaring og historiske gennemsnit frem for faste 
+modeller, hvilket indikerer at datapotentialet endnu ikke er fuldt udnyttet. 
+
+### Analyse af kode
+Analysens formål er at undersøge den bedst performende model inden for hver 
+tidshorisont før kampdagen. Vurderingen baseres på modellernes præcision målt 
+med RMSE samt deres praktiske anvendelighed i Viborg FF.
+
+I koden er der opbygget og sammenlignet fire forskellige modeltyper på både 
+trænings- og testdata. Modellerne evalueres ved hjælp af RMSE på forskellige 
+tidshorisonter, herunder én måned, 10, 7 og 3 dage før kampdstart. De anvendte 
+modeller består af ridge regression, lasso regression, lineær regression og 
+best subset selection.
+
+For tidshorisonten én måned før kampstart opnår ridge regression den laveste 
+test RMSE Forskellene mellem ridge og lasso er relativt lille, hvilket 
+indikerer, at prædiktion af tilskuertal så tidligt er forbundet med usikkerhed. 
+Dette skyldes sandsynligvis, at billetsalgsdata ikke er tilgængelige, og at de 
+forklarende variabler primært består af kamp og kalender relaterede faktorer.
+
+10 dage før kampstart giver lasso regression den laveste RMSE, da 
+modellen fokuserer på de mest forklarende variable og reducerer de mindre 
+forklarende variable til nul. Dette skyldes sandsynligvis at billetsalgsdata 
+har høj forklaringskraft.
+
+7 dage før kampstart opnår lasso og best subset den laveste RMSE på henholdsvis
+400 og 402. Da best subset modellen er den mest simple model med få forklarende
+variable, vurderes den som det mest hensigtsmæssige valg for denne tidshorisont.
+
+3 dage før kampstart opnår alle modeller en høj præcision med test RMSE 
+omkring 190–205 tilskuere. Forskellene mellem modellerne er relativt små, 
+hvilket indikerer, at tilskuertallet på dette tidspunkt er meget forudsigeligt. 
+Best subset selection viser, at den optimale model kun indeholder én 
+forklarende variabel nemlig d3_tilskuere, hvilket understreger, at det aktuelle 
+billetsalg tre dage før kampstart næsten alene kan forklarer det endelige 
+tilskuertal. Selvom den store lineære model og ridge regression opnår marginalt 
+lavere eller tilsvarende RMSE, vurderes gevinsten ved mere komplekse modeller 
+at være minimal.
+
+Samlet set viser analysen, at modellerne præsterer relativt ens, og at simple 
+modeller ofte er tilstrækkelige. Set fra et organisatorisk perspektiv peger 
+resultaterne på, at lasso og subset modeller giver stabile og letforståelige 
+estimater, som kan anvendes direkte i Viborg FF’s kommercielle arbejde. 
+Modellen én måned før kampstart kan anvendes til overordnet planlægning, mens 
+modeller tættere på kampdagen kan anvendes til mere konkrete og operationelle 
+beslutninger.
+
+## Løsningsforslag
+På baggrund af analysen foreslås det at implementere en løsning, der 
+understøtter planlægningen af Viborg FF’s hjemmekampe på flere tidspunkter 
+før kampstart. Løsningen er tilpasset klubbens nuværende datamodenhed og kan 
+anvendes uden store organisatoriske eller tekniske ændringer.
+
+Konkret foreslås et automatiseret forecast, der beregner det forventede 
+tilskuertal for tidshorisonterne. Forecasten baseres på ridge, lasso og subset 
+selection-modellen, som anvendes på tværs af tidspunkter for at 
+sikre en ensartet anvendelse i praksis.
+
+Hvis resultaterne skulle præsenteres i Viborg FF, ville det ske i form af en 
+enkel tabel eller et overskueligt dashboard, hvor det forventede tilskuertal 
+fremgår for hvert tidspunkt før kampstart. Denne præsentationsform vil kunne 
+anvendes direkte til at understøtte aktiviteterne i den kommercielle afdeling.
+
+Løsningen holdes på et niveau, der matcher klubbens data 
+modenhedsniveau på omkring 1-2, da analysen viser, at mere komplekse modeller ikke 
+giver væsentligt bedre præcision. Dermed vil Viborg FF kunne arbejde mere 
+systematisk med tilskuerprognoser uden at stille høje krav til datamodenhed 
+eller teknisk infrastruktur.
+
+## Konklusion
+Vi har undersøgt, hvordan Viborg FF kan ved hjælp af interne og eksterne data 
+anvende machine learning til forudsigelse af tilskuere til hjemmekampe på 
+forskellige tidspunkter, for at sikre optimal planlægning af bl.a. bemanding, 
+vareindkøb og øvrige ressourcer. Opgaven har undersøgt og taget højde for 
+klubbens nuværende datamodenhed, for at sikre at løsningen kan implementeres. 
+Det viser sig, at de interne data giver et solidt grundlag for prædiktive 
+modeller, mens de eksterne data om vejrforhold og helligdage ikke bidrager 
+til forudsigelser af tilskuere én måned før kampstart.
+
+Desuden viser analysen, at den bedst performende model afhænger af tidspunktet 
+før kampdagen. Ridge-regression har en bedre performance flere måneder før 
+kampdagen, mens lasso og subset selection opnår den laveste RMSE, jo tættere 
+på kampdagen. Samlet set indikerer de relativt små forskelle mellem modellerne, 
+at simple regressionsmodeller er tilstrækkelige til at levere brugbare 
+forudsigelser.
+
+Analysen viser, at data anvendes i begrænset omfang, hvilket sætter klubbens 
+datamodenhedsniveau på 1-2. Det viser sig, at de alligevel godt kan 
+implementere løsningen uden nogen organisatoriske ændringer. Dette kan bidrage 
+til mere præcise forudsigelser af tilskuertallet og dermed bedre planlægning 
+op til kampdagen.
+
+
+\newpage
+
+## Literaturliste
+
+::: {#refs}
+::: 
+
+
+\newpage
+
+
+\appendix
+
+## Bilag
+### Indhentning af datafiler fra VFF 
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# Henter RDS filerne ned
+fcidk <- readRDS("data/fcidk.rds")
+vffkort01 <- readRDS("data/vffkort01.rds")
+
+```
+
+### Hente data fra Superstats og gør dem tidy
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# Superstats crawl --------------------------------------------------------
+# Laver en tom liste, som vi kommer nedstående løkke i
+superstats_program <- list()
+
+# Løkke hvor vi henter alle sæsoner ned fra 2003 til 2026  
+for (y in 2003:2026) {
+  url <- paste0("https://superstats.dk/program?season=", y)
+  print(url)
+  
+  alle_tabeller <- read_html(url, encoding = "UTF-8") |> 
+    html_nodes("div#club table") |> 
+    html_table(header = FALSE, convert = FALSE)
+  
+  # Samler alle tabeller fra sæsonen i ét dataframe og tilføjer sæson-variabel
+  alle_tabeller <- bind_rows(alle_tabeller) |>
+    mutate(sæson = y)  
+  
+  superstats_program[[as.character(y)]] <- alle_tabeller
+}
+
+# Kør denne linje for at se data fra Superstats
+superstats_program
+
+# Superstats gemmes til RDS -----------------------------------------------
+saveRDS(superstats_program, file = "data/superstats_program.rds")
+
+# Load RDS
+superstats_program <- readRDS("data/superstats_program.rds")
+
+```
+
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# Samler alt data til én dataframe
+superstats_dataframe <- bind_rows(superstats_program, .id = "runde")
+view(superstats_dataframe)
+
+# Opretter ny runde variabel, og fjerner den gamle der havde forkert data
+superstats_dataframe <- superstats_dataframe |> 
+  dplyr::select(-dplyr::any_of("runde")) |> 
+  mutate(runde_new = ifelse(str_detect(X1, "^Runde"), X1, NA)) |> 
+  tidyr::fill(runde_new, .direction = "down") |> 
+  filter(!str_detect(X1, "^Runde")) |> 
+  rename(runde = runde_new)
+
+
+# Rensning af data samt ændring i variable navne
+superstats_dataframe <- dplyr::select(superstats_dataframe, -X6, -X7) |>
+  rename(runde = runde, ugedag = X1, dato = X2, hold = X3, resultat = X4, tilskuertal = X5) |> 
+  # Fjerner de kampe som ikke er spillet endnu
+  filter(!is.na(tilskuertal) & tilskuertal != "")
+
+
+# Filtrere så vi kun kan se VFF hjuemmekampe
+superstats_dataframe <- superstats_dataframe |>
+  dplyr::filter(stringr::str_starts(hold, "VFF"))
+
+# Lav hold-kategori (A/B/C)
+superstats_dataframe <- superstats_dataframe |>
+  mutate(
+    hold_kategori = case_when(
+      hold %in% c("VFF-FCK", "VFF-BIF", "VFF-FCM", "VFF-AGF") ~ "A",
+      hold %in% c("VFF-AaB", "VFF-OB", "VFF-SIF", "VFF-RFC", "VFF-Esbjerg") ~ "B",
+      TRUE ~ "C"
+    ),
+    hold_kategori = factor(hold_kategori, levels = c("A", "B", "C"))
+  )
+
+# Danner nye variabler 
+superstats_dataframe <- superstats_dataframe |>
+  separate(resultat, into = c("mål_hjemme", "mål_ude"), sep = "-",
+           remove = FALSE) |>
+  # Vi splitter resultat til mål hjemme og mål ude, hvorefter vi danner en 
+  # variable om VFF har vundet eller ej
+  mutate(
+    mål_hjemme = as.numeric(mål_hjemme),
+    mål_ude    = as.numeric(mål_ude),
+    vff_sejr   = if_else(mål_hjemme > mål_ude, 1, 0),
+    point      = case_when(
+      mål_hjemme > mål_ude ~ 3,
+      mål_hjemme == mål_ude ~ 1,
+      TRUE ~ 0
+    )
+  ) |>
+  mutate(
+    sejre_seneste_3 = lag(vff_sejr, 1) + lag(vff_sejr, 2) + lag(vff_sejr, 3),
+    mål_seneste_3   = lag(mål_hjemme, 1) + lag(mål_hjemme, 2) + 
+      lag(mål_hjemme, 3),
+    point_seneste_3 = lag(point, 1) + lag(point, 2) + lag(point, 3)
+  )
+  # Vi har her dannet variabler der viser hvor mange sejre, mål og point 
+  # VFF har fået i de seneste 3 hjemmekampe
+
+
+# Her laver vi dato, tid og sæson variabler
+superstats_dataframe <- superstats_dataframe |>
+  filter(str_detect(dato, "^\\d{2}/\\d{2}")) |>
+  mutate(
+    måned = as.integer(substr(dato, 4, 5)),
+    år    = if_else(måned >= 7, sæson - 1, sæson),
+    datetime = lubridate::dmy_hm(
+      paste0(substr(dato, 1, 5), "/", år, " ", substr(dato, 7, 11)),
+      tz = "Europe/Copenhagen"
+    ),
+    dato = as.Date(datetime),
+    runde_nr = as.integer(str_extract(runde, "\\d+")),
+    datetime_hour = floor_date(datetime, unit = "hour"),
+    sæson   = case_when(
+      month(dato) >= 7 ~ paste0(year(dato), "/", year(dato) + 1),
+      TRUE             ~ paste0(year(dato) - 1, "/", year(dato))
+  )
+)
+
+# Danner variabel for tilskuertal ved seneste hjemmekamp mod samme modstander
+superstats_dataframe <- superstats_dataframe |>
+  mutate(
+    tilskuertal = as.numeric(gsub("\\.", "", tilskuertal)),
+    modstander  = str_squish(str_remove(hold, "^VFF-"))
+  ) |>
+  arrange(modstander, datetime) |>
+  group_by(modstander) |>
+  mutate(tilskuere_sidste_modstander = lag(tilskuertal)) |>
+  ungroup() |>
+  arrange(datetime)
+
+```
+
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# Vi cleaner vores dataframe, så vi kun har de nødvendige variabler med
+superstats_clean <- superstats_dataframe |>
+  dplyr::select(
+    ugedag, hold, hold_kategori, mål_hjemme, mål_ude,
+    tilskuertal, tilskuere_sidste_modstander, runde_nr, sæson,
+    vff_sejr, sejre_seneste_3, mål_seneste_3,
+    point, point_seneste_3,
+    datetime, datetime_hour, dato 
+  )
+
+view(superstats_clean)
+```
+
+### Hente data fra DMI og gør dem tidy
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+ # Base URL og API-nøgle
+dmi_base_url <- "https://dmigw.govcloud.dk/v2/"
+dmi_info_url <- "metObs/collections/observation/items?"
+api_key <- Sys.getenv("MY_API_KEY")
+
+# Funktion til at hente vejrdata fra DMI
+  hent_dmi_data <- function(station_id, parameter_id, start_date, end_date, 
+                            limit = 50000) {   
+  # Bygger query string med station, parameter, tidsinterval og limit
+  query <- paste0(
+    "stationId=", station_id,
+    "&parameterId=", parameter_id,
+    "&datetime=", start_date, "Z/", end_date, "Z",
+    "&limit=", format(limit, scientific = FALSE)
+  )
+  
+  # Bygger full URL med API-nøgle
+  full_url <- paste0(dmi_base_url, dmi_info_url, query, "&api-key=", api_key)
+  
+  # API-kald
+  response <- GET(full_url)
+  
+  # Tjekker status
+  if (status_code(response) != 200) {
+    stop("API fejl for ", parameter_id, ": Status ", status_code(response))
+  }
+  
+  # Parse response 
+  content_json <- jsonlite::fromJSON(rawToChar(response$content), flatten = FALSE)
+  
+  # Tjekker om der er data
+  if (is.null(content_json$features) || length(content_json$features) == 0) {
+    warning("Ingen data fundet for ", parameter_id)
+    return(tibble())
+  }
+  
+  props <- content_json$features$properties
+  
+  # Opbygger et dataframe med tidspunkt, værdi og parameter-id
+  df_select <- tibble(
+    observationstidspunkt = props$observed,
+    værdi = as.numeric(props$value),
+    parameter = parameter_id
+  )
+  
+  return(df_select)
+}
+```
+
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# År og station der skal hentes, samt en container til vores data
+år <- 2003:2025
+karup <- "06060"
+vejr_list <- list()
+
+for (y in år) {
+  start <- paste0(y, "-01-01T00:00:00")
+  slut  <- paste0(y, "-12-31T23:59:59")
+  
+  cat("Henter Vind, Temp og Nedbør for år:", y, "\n")
+  
+  # Vind
+  vind_y <- hent_dmi_data(
+    station_id    = karup,
+    parameter_id  = "wind_speed_past1h",
+    start_date    = start,
+    end_date      = slut,
+    limit         = 50000
+  ) |> 
+    dplyr::mutate(type = "vind")
+  
+  # Temperatur
+  temp_y <- hent_dmi_data(
+    station_id    = karup,
+    parameter_id  = "temp_mean_past1h",
+    start_date    = start,
+    end_date      = slut,
+    limit         = 50000
+  ) |> 
+    dplyr::mutate(type = "temp")
+  
+  # Nedbør
+  nedbør_y <- hent_dmi_data(
+    station_id    = karup,
+    parameter_id  = "precip_past1h",
+    start_date    = start,
+    end_date      = slut,
+    limit         = 50000
+  ) |> 
+    dplyr::mutate(type = "nedbør")
+  
+  # Saml for året
+  vejr_list[[as.character(y)]] <- dplyr::bind_rows(
+    vind_y,
+    temp_y,
+    nedbør_y
+  )
+}
+# Samler det i et dataframe
+vejr_all <- dplyr::bind_rows(vejr_list, .id = "år")
+
+# DMI gemmes til RDS -----------------------------------------------
+saveRDS(vejr_all, file = "data/vejr_all.rds")
+
+# Load RDS
+vejr_all <- readRDS("data/vejr_all.rds")
+
+```
+
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# Omdanner til wide format med pivot, og ændre observationstidspunkt til httm
+vejr_wide <- vejr_all |>
+  dplyr::select(år, observationstidspunkt, type, værdi) |>
+  dplyr::mutate(
+    # Konverter ISO-tid til datetime i UTC
+    datotid_utc = lubridate::ymd_hms(observationstidspunkt, tz = "UTC"),
+    # Konverter til dansk tid
+    datetime = lubridate::with_tz(datotid_utc, tzone = "Europe/Copenhagen"),
+    datetime_hour = floor_date(datetime, unit = "hour")
+  ) |>
+  tidyr::pivot_wider(
+    names_from = type,
+    values_from = værdi
+  ) |>
+  # Her vælger vi kun at beholder datetime
+  dplyr::select(datetime_hour, dplyr::everything(), -datetime, -år, 
+                -observationstidspunkt, -datotid_utc)
+
+view(vejr_wide)
+```
+
+### Hente data fra nager.at og gør dem tidy
+
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# Helligdage fra Nager.Date -----------------------------------------------
+
+# Først laver vi en container, som vi kan smide vores data ned i
+helligdage_list <- list()
+
+# Her laver vi en løkke, som henter data fra nager ned for hvert år
+for (y in 2003:2025) {
+  
+  url_helligdage <- paste0("https://date.nager.at/api/v3/PublicHolidays/", y, "/DK")
+  print(url_helligdage)
+  
+  # API-kald til Nager.Date
+  res <- httr::GET(url_helligdage)
+  
+  # Kun hvis statuskoden er 200 (OK), fortsætter vi
+  if (httr::status_code(res) == 200) {
+    json_content <- httr::content(res, as = "text", encoding = "UTF-8")
+    df <- jsonlite::fromJSON(json_content)
+    
+  # Gemmer årets helligdage i listen
+  helligdage_list[[as.character(y)]] <- df
+  }
+}
+
+# Saml alle år til ét dataframe
+helligdage_df <- bind_rows(helligdage_list)
+
+# Rydder op i helligdagsdatasættet og tilpasser navne/typer
+helligdage <- helligdage_df |> 
+  dplyr::select(date, localName) |> 
+  rename(
+    dato = date,
+    helligdag = localName
+  )  |> 
+  dplyr::mutate(
+    dato = as.Date(dato)
+  ) |> 
+  dplyr::filter(helligdag != "Banklukkedag")
+  # Fjerner "Banklukkedag", som ikke er en normal helligdag
+
+
+view(helligdage)
+
+# Helligdage gemmes til RDS -----------------------------------------------
+saveRDS(helligdage, file = "data/helligdage.rds")
+
+# Load RDS
+helligdage <- readRDS("data/helligdage.rds")
+
+```
+
+### Joining af datasæt i RSQLight
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# Joining af datasæt ------------------------------------------------------
+    # Opretter en projekt-database 
+con_sql <- dbConnect(SQLite(), "data/vff_eksamen.sqlite")
+
+# Sætter vores dataframes ind som tabeller i databasen
+dbWriteTable(con_sql, "superstats", superstats_clean, overwrite = TRUE)
+dbWriteTable(con_sql, "helligdage", helligdage,      overwrite = TRUE)
+dbWriteTable(con_sql, "vejr",       vejr_wide,       overwrite = TRUE)
+dbWriteTable(con_sql, "vffkort",    vffkort01,       overwrite = TRUE)
+
+dbListTables(con_sql) 
+
+# SQL-join
+sql_join <- "
+SELECT 
+  s.sæson,
+  s.runde_nr,
+  s.ugedag,
+  s.hold,
+  s.mål_hjemme,
+  s.mål_ude,
+  s.tilskuertal,
+  s.vff_sejr,
+  s.sejre_seneste_3,
+  s.mål_seneste_3,
+  s.point,
+  s.point_seneste_3,
+  s.datetime,
+  s.dato,
+  s.tilskuere_sidste_modstander,
+  s.hold_kategori,
+
+    -- helligdag -> dummy
+    CASE
+      WHEN h.dato IS NULL THEN 0 
+      ELSE 1 
+    END AS helligdag_dummy,
+
+    -- vejr
+    v.vind,
+    v.temp,
+    v.nedbør,
+
+    -- VFF billetdata
+    k.d10_tilskuere,
+    k.d7_tilskuere,
+    k.d3_tilskuere
+
+FROM superstats AS s
+
+LEFT JOIN helligdage AS h
+  ON s.dato = h.dato
+
+LEFT JOIN vejr AS v
+  ON s.datetime_hour = v.datetime_hour
+
+LEFT JOIN vffkort AS k
+  ON s.sæson   = k.sæson
+ AND s.runde_nr = k.runde
+
+-- behold kun VFF-hjemmekampe
+WHERE s.hold LIKE 'VFF-%'
+
+GROUP BY 
+  s.sæson,
+  s.runde_nr,
+  s.datetime 
+  
+  HAVING COUNT(s.datetime) >= 1
+"
+
+```
+
+### Download joinet datasæt, formatér behørigt, og gør data klar til preprocessing
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+# Hent joinet datasæt tilbage til R
+fuld_datasæt <- dbGetQuery(con_sql, sql_join)
+dbDisconnect(con_sql)
+
+str(fuld_datasæt)
+
+# Konverterer til de rigtige typer
+fuld_datasæt <- fuld_datasæt |>
+  mutate(
+    # ---- POSIXCT ----
+  datetime = as.POSIXct(datetime, origin = "1970-01-01", tz = "Europe/Copenhagen"),
+    # ---- Datetime ----
+  dato = as.Date(dato, origin = "1970-01-01"),
+    # ---- Factor variabler ----
+  ugedag = as.factor(ugedag),
+  hold = as.factor(hold),
+  sæson = as.factor(sæson),
+  hold_kategori = as.factor(hold_kategori),
+    # ---- Numeric variabler ----
+  tilskuertal = as.numeric(gsub("\\.", "", tilskuertal)),
+  mål_hjemme = as.numeric(mål_hjemme),
+  mål_ude = as.numeric(mål_ude),
+  vff_sejr = as.numeric(vff_sejr),
+  sejre_seneste_3 = as.numeric(sejre_seneste_3),
+  mål_seneste_3 = as.numeric(mål_seneste_3),
+  point = as.numeric(point),
+  point_seneste_3 = as.numeric(point_seneste_3),
+  helligdag_dummy = as.integer(helligdag_dummy),
+  tilskuere_sidste_modstander = as.numeric(tilskuere_sidste_modstander),
+    
+  d10_tilskuere = as.numeric(d10_tilskuere),
+  d7_tilskuere  = as.numeric(d7_tilskuere),
+  d3_tilskuere  = as.numeric(d3_tilskuere)
+  )
+
+view(fuld_datasæt)
+```
+
+
+### Preprocess - dan flere variabler og lav ét datasæt uden missing med en række for hver hjemmekamp
+```{r}
+#| echo: true
+#| eval: true
+#| results: hide
+#| message: false
+#| warning: false
+
+#__________Esktra tilføjelse af variabeler_____________________________
+
+kamp_vejr_window <- list()
+# Vi danner en variable med gennesnittet af vejret fra
+# 3 timer før kampstart og frem til slutfløjt.
+for(i in 1:nrow(fuld_datasæt)) {
+  
+  kamp_tid <- fuld_datasæt$datetime[i]
+  start_window <- kamp_tid - hours(3)
+  slut_window  <- kamp_tid + hours(2)
+  
+  # filtrér vejrdata i vinduet
+  vejr_subset <- vejr_wide |>
+    filter(datetime_hour >= start_window,
+           datetime_hour <= slut_window)
+  
+  # beregn gennemsnit
+  kamp_vejr_window[[i]] <- tibble(
+    datetime = kamp_tid,
+  gns_vind   = round(mean(vejr_subset$vind,   na.rm = TRUE), 1),
+  gns_temp   = round(mean(vejr_subset$temp,   na.rm = TRUE), 1),
+  gns_nedbør = round(mean(vejr_subset$nedbør, na.rm = TRUE), 1)
+  )
+}
+
+# slå alle rækker sammen
+kamp_vejr_window <- bind_rows(kamp_vejr_window)
+
+# laver join til fuld_datasæt, og fjerne 2002, da vi ingen dmi data har
+fuld_datasæt <- fuld_datasæt |>
+  filter(lubridate::year(dato) != 2002) |>
+  left_join(kamp_vejr_window, by = "datetime") |>
+  na.omit()
+
+view(fuld_datasæt)
+
+# Laver måned variabel, samt weekend og tidspunkt dummies
+fuld_datasæt <- fuld_datasæt |>
+  dplyr::mutate(
+    måned = factor(lubridate::month(dato)),
+    weekend = if_else(ugedag %in% c("Lør", "Søn"), 1, 0),
+    tidspunkt = factor(if_else(lubridate::hour(datetime) < 17, 
+                               "Eftermiddag", "Aften"))
+  )
+
+view(fuld_datasæt)
+
+```
+
+
+### Danner datasæt til de 4 tidshorisonter
+```{r}
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# Datasæt for de 4 tidshorisonter -------------------------------------------
+  # 1 måned før
+data_1_mdr <- fuld_datasæt |>
+  dplyr::select(tilskuertal, hold_kategori, weekend, helligdag_dummy,
+  tilskuere_sidste_modstander, tidspunkt, måned
+  ) |>
+  na.omit()
+summary(lm(tilskuertal ~ ., data = data_1_mdr))
+
+  # 10 dage før
+data_10d <- fuld_datasæt |>
+  dplyr::select(tilskuertal, d10_tilskuere, hold_kategori, weekend,
+  helligdag_dummy, måned, tilskuere_sidste_modstander, tidspunkt
+  ) |>
+  na.omit()
+summary(lm(tilskuertal ~ ., data = data_10d))
+
+# 7 dage før
+data_7d <- fuld_datasæt |>
+  dplyr::select(tilskuertal, d7_tilskuere, hold_kategori, weekend,
+  helligdag_dummy, måned, tilskuere_sidste_modstander, tidspunkt,
+  sejre_seneste_3, mål_seneste_3, gns_temp, gns_nedbør, gns_vind,
+  ) |>
+  na.omit()
+summary(lm(tilskuertal ~ ., data = data_7d))
+
+  # 3 dage før
+data_3d <- fuld_datasæt |>
+  dplyr::select(tilskuertal, d3_tilskuere, hold_kategori, weekend,
+  helligdag_dummy, gns_temp, gns_nedbør, gns_vind, tilskuere_sidste_modstander,
+  tidspunkt, sejre_seneste_3, mål_seneste_3
+  ) |>
+  na.omit()
+summary(lm(tilskuertal ~ ., data = data_3d))
+```
+
+### Opdeling i et trænings- og testdatasæt - med et seed = jeres holdnummer.
+```{r}
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# ------------------------- Split (train/test) -------------------------
+split_data <- function(data, seed = 7, k = 5) {
+  set.seed(seed)
+  n <- nrow(data)
+  
+  train_opdeling <- sample(seq_len(n), size = floor(0.70 * n))
+  test_opdeling  <- setdiff(seq_len(n), train_opdeling)
+  train <- data[train_opdeling, ]
+  test  <- data[test_opdeling, ]
+  
+  # laver k-fold opdeling
+  set.seed(seed)
+  folds <- sample(rep(1:k, length = nrow(train)))
+  
+  list(train = train, test = test, folds = folds, k = k, seed = seed)
+}
+
+split_1mdr <- split_data(data_1_mdr)
+split_10d  <- split_data(data_10d)
+split_7d   <- split_data(data_7d)
+split_3d   <- split_data(data_3d)
+```
+
+### Stor model - linenær regression med alle variabler
+```{r}
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# ------------------------- Stor LM (test RMSE) -------------------------
+model_stor_lm <- function(train, test) {
+  fit <- lm(tilskuertal ~ ., data = train)
+  pred <- predict(fit, newdata = test)
+  
+  rmse_test <- sqrt(mean((test$tilskuertal - pred)^2))
+  
+  list(rmse_test = rmse_test, fit = fit)
+}
+
+# Kører stor lineær regression for hver tidshorisont
+lm_1mdr <- model_stor_lm(split_1mdr$train, split_1mdr$test)
+lm_10d  <- model_stor_lm(split_10d$train,  split_10d$test)
+lm_7d   <- model_stor_lm(split_7d$train,   split_7d$test)
+lm_3d   <- model_stor_lm(split_3d$train,   split_3d$test)
+
+# Laver en tibble for overblik 
+lm_table <- tibble::tibble(
+  tidshorisont = c("1 måned", "10 dage", "7 dage", "3 dage"),
+  lm_rmse_test = c(lm_1mdr$rmse_test, lm_10d$rmse_test, lm_7d$rmse_test, 
+                   lm_3d$rmse_test)
+)
+
+lm_table
+```
+
+
+#### Lasso / Ridge - husk at bruge CV til at optimere lambda
+
+```{r}
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# ---------------- Ridge / Lasso (CV på train + test RMSE) ----------------
+model_ridge_lasso <- function(train, test, seed = 7, k = 5) {
+  x_train <- model.matrix(tilskuertal ~ ., train)[, -1]
+  y_train <- train$tilskuertal
+  x_test  <- model.matrix(tilskuertal ~ ., test)[, -1]
+  y_test  <- test$tilskuertal
+  # Definerer grid af lambda-værdier 
+  grid <- 10^seq(10, -2, length = 100)
+  
+    ### Ridge
+  set.seed(seed)
+  ridge_cv <- glmnet::cv.glmnet(x_train, y_train, alpha = 0, lambda = grid, nfolds = k)
+  # Finde den bedste lambda
+  bestlam_ridge <- ridge_cv$lambda.min 
+  # Finde RMSE på træning ridge cross-validation med den bedste lambda
+  rmse_ridge_cv <- sqrt(min(ridge_cv$cvm)) 
+  # Teste på test data
+  ridge_pred <- predict(ridge_cv, s = bestlam_ridge, newx = x_test) 
+  # RMSE på test data
+  rmse_ridge_test <- sqrt(mean((y_test - ridge_pred)^2)) 
+  
+     ### Lasso
+  set.seed(seed)
+  lasso_cv <- glmnet::cv.glmnet(x_train, y_train, alpha = 1, lambda = grid, nfolds = k)
+  # Finde den bedste lambda
+  bestlam_lasso <- lasso_cv$lambda.min 
+  # Finde RMSE på træning lasso cross-validation med den bedste lambda
+  rmse_lasso_cv <- sqrt(min(lasso_cv$cvm)) 
+  # Teste på test data
+  lasso_pred <- predict(lasso_cv, s = bestlam_lasso, newx = x_test) 
+  # RMSE på test data
+  rmse_lasso_test <- sqrt(mean((y_test - lasso_pred)^2)) 
+  
+  list(
+    ridge = list(rmse_cv = rmse_ridge_cv, rmse_test = rmse_ridge_test, bestlam = bestlam_ridge),
+    lasso = list(rmse_cv = rmse_lasso_cv, rmse_test = rmse_lasso_test, bestlam = bestlam_lasso)
+  )
+}
+
+# Kører ridge og lasso modellerne for hver tidshorisont
+rl_1mdr <- model_ridge_lasso(split_1mdr$train, split_1mdr$test, k = split_1mdr$k)
+rl_10d  <- model_ridge_lasso(split_10d$train,  split_10d$test,  k = split_10d$k)
+rl_7d   <- model_ridge_lasso(split_7d$train,   split_7d$test,   k = split_7d$k)
+rl_3d   <- model_ridge_lasso(split_3d$train,   split_3d$test,   k = split_3d$k)
+
+# Laver en tibble for overblik 
+ridge_lasso_table <- tibble::tibble(
+  tidshorisont = c("1 måned", "10 dage", "7 dage", "3 dage"),
+  ridge_rmse_cv   = c(rl_1mdr$ridge$rmse_cv,   rl_10d$ridge$rmse_cv,   rl_7d$ridge$rmse_cv,   rl_3d$ridge$rmse_cv),
+  ridge_rmse_test = c(rl_1mdr$ridge$rmse_test, rl_10d$ridge$rmse_test, rl_7d$ridge$rmse_test, rl_3d$ridge$rmse_test),
+  lasso_rmse_cv   = c(rl_1mdr$lasso$rmse_cv,   rl_10d$lasso$rmse_cv,   rl_7d$lasso$rmse_cv,   rl_3d$lasso$rmse_cv),
+  lasso_rmse_test = c(rl_1mdr$lasso$rmse_test, rl_10d$lasso$rmse_test, rl_7d$lasso$rmse_test, rl_3d$lasso$rmse_test)
+)
+
+ridge_lasso_table
+```
+  
+
+### Subset selection metode
+```{r}
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# --------------- Best subset (K-fold CV på train + test RMSE) ---------------
+predict_regsubsets <- function(object, newdata, form, id) {
+  mat <- model.matrix(form, newdata)
+  coefi <- coef(object, id = id)
+  xvars <- names(coefi)
+  as.numeric(mat[, xvars, drop = FALSE] %*% coefi)
+}
+
+# Best subset-selection med K-fold cross-validation
+model_subset <- function(train, test, folds, k = 5) {
+  form <- tilskuertal ~ .
+  p <- ncol(train) - 1
+  
+  cv.errors <- matrix(NA, k, p)
+  
+  for (j in 1:k) { # her gennemløbes alle folds
+    best.fit <- leaps::regsubsets(form, data = train[folds != j, ], nvmax = p)
+    for (i in 1:p) { # her gennemløbes alle folds
+      pred <- predict_regsubsets(best.fit, train[folds == j, ], form, id = i)
+      cv.errors[j, i] <- mean((train$tilskuertal[folds == j] - pred)^2)
+      # Her udregnes MSE for hver fold og for hver kandidatmodel 
+    }
+  }
+  
+  mean_mse <- colMeans(cv.errors)
+  best_size <- which.min(mean_mse)
+  rmse_cv <- sqrt(min(mean_mse))
+  
+  # laver best subset på træning
+  reg_best <- leaps::regsubsets(form, data = train, nvmax = p)
+  
+  # Forudsigelser på test-sættet for best_size-model samt rmse på test
+  pred_test <- predict_regsubsets(reg_best, test, form, id = best_size)
+  rmse_test <- sqrt(mean((test$tilskuertal - pred_test)^2))
+  
+  list(
+    rmse_cv = rmse_cv,
+    rmse_test = rmse_test,
+    best_size = best_size,
+    coef = coef(reg_best, id = best_size)
+  )
+}
+
+# Kører best subset og k-fold cross validation for hver tidshorisont
+sub_1mdr <- model_subset(split_1mdr$train, split_1mdr$test, split_1mdr$folds, k = split_1mdr$k)
+sub_10d  <- model_subset(split_10d$train,  split_10d$test,  split_10d$folds,  k = split_10d$k)
+sub_7d   <- model_subset(split_7d$train,   split_7d$test,   split_7d$folds,   k = split_7d$k)
+sub_3d   <- model_subset(split_3d$train,   split_3d$test,   split_3d$folds,   k = split_3d$k)
+
+# Laver en tibble for overblik 
+subset_table <- tibble::tibble(
+  tidshorisont = c("1 måned", "10 dage", "7 dage", "3 dage"),
+  subset_rmse_cv   = c(sub_1mdr$rmse_cv, sub_10d$rmse_cv, sub_7d$rmse_cv, sub_3d$rmse_cv),
+  subset_rmse_test = c(sub_1mdr$rmse_test, sub_10d$rmse_test, sub_7d$rmse_test, sub_3d$rmse_test),
+  best_size        = c(sub_1mdr$best_size, sub_10d$best_size, sub_7d$best_size, sub_3d$best_size)
+)
+subset_table
+```
+
+
+### Hvordan er Test-RMSE sammenlignet med CV-RMSE
+
+```{r}
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+#---------- Laver left join for at saml ealle rmse resultaterne ----------
+rmse_table_final <- lm_table |>
+  dplyr::left_join(ridge_lasso_table, by = "tidshorisont") |>
+  dplyr::left_join(subset_table,      by = "tidshorisont")
+
+rmse_table_final
+```
+
+### Fortolkning
+Resultaterne viser, at der er små forskelle mellem modellernes resultater,
+hvilket indikerer,at modellerne giver næsten ensartede prædiktioner.
+Desuden ses en stigende præcision i resultaterne, jo tættere man kommer på
+kampdagen. Samlet set kan resultaterne fortolkes således, at en løsning med
+begrænset modelkompleksitet er tilstrækkelig. Herved giver Lasso- og
+subset-modellerne stabile og letforståelige estimater for alle tidshorisonter,
+som kan anvendes direkte til forudsigelse af tilskuertal. Endvidere kan
+modellen for én måned før kampdagen anvendes til overordnet planlægning, mens
+modellerne tættere på kampdagen egner sig til mere konkrete og
+operationelle beslutninger.
+
+
+### Prædiktion på nye data (fx best-case/worst-case scenario for de første kampe i foråret)
+```{r}
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+# Best/ worst case scenario -----------------------------------------------
+
+# Laver 10% og 90% fraktil for tilskuere ved seneste kamp mod modstander
+worst <- as.numeric(quantile(data_1_mdr$tilskuere_sidste_modstander, 0.10, 
+                             na.rm = TRUE))
+best <- as.numeric(quantile(data_1_mdr$tilskuere_sidste_modstander, 0.90, 
+                            na.rm = TRUE))
+
+brøndby_scenarier <- tibble::tibble(
+  scenario = c("Worst-case", "Best-case"),
+  hold_kategori = factor(c("A","A"), levels = levels(data_1_mdr$hold_kategori)), 
+  # Brøndby er i hold kategori A
+  weekend = c(1,1),  # Det er søndag, så derfor weekend
+  helligdag_dummy = c(0,0), # Det er ikke helligdag
+  måned = factor(c(2,2), levels = levels(data_1_mdr$måned)), # Februar
+  tidspunkt = factor(c("Aften","Aften"), levels = levels(data_1_mdr$tidspunkt)), 
+  # Kampen spilles kl 18
+  tilskuere_sidste_modstander = c(worst, best)
+)
+
+fcn_scenarier <- data.frame(
+  scenario = c("Worst-case", "Best-case"),
+  hold_kategori = factor(c("C","C"), levels = levels(data_1_mdr$hold_kategori)), 
+  #fcn er i hold kategori C
+  weekend = c(1, 1), # Det er søndag, så derfor weekend
+  helligdag_dummy = c(0, 0), # Det er ikke helligdag
+  måned = factor(c(3, 3), levels = levels(data_1_mdr$måned)), # Marts
+  tidspunkt = factor(c("Aften","Aften"), levels = levels(data_1_mdr$tidspunkt)), 
+  # Kampen spilles kl 18
+  tilskuere_sidste_modstander = c(worst, best)
+)
+
+
+lm_1mdr <- lm(tilskuertal ~ ., data = data_1_mdr)
+
+# Forudsiger tilskuertal for Brøndby-scenarierne
+brøndby_scenarier$pred <- predict(lm_1mdr, newdata = brøndby_scenarier)
+# Forudsiger tilskuertal for FCN-scenarierne
+fcn_scenarier$pred      <- predict(lm_1mdr, newdata = fcn_scenarier)
+
+brøndby_scenarier
+fcn_scenarier
+```
+
+
+### Sammenlign resultatet med formålet med undersøgelsen.
+```{r}
+#| echo: true
+#| eval: true
+#| message: false
+#| warning: false
+
+mean(fuld_datasæt$tilskuertal, na.rm = TRUE)
+```
+Resultaterne stemmer godt overens med undersøgelsens formål, da modellerne
+viser, at Viborg FF kan forudsige tilskuertallet med stigende præcision
+tættere på kampdagen. Med et gennemsnitligt tilskuertal på 5.205 pr. kamp
+svarer en RMSE på ca. 1.200 én måned før til en fejl på 23%, 500–600
+ved 10 dage til 10–12%, 300–400 ved 7 dage til 6–8% og 200–250 ved 3 dage
+før kamp til 4–5%. Dette viser, at datadrevne modeller reducerer
+planlægningsusikkerheden. Modellen kan også anvendes i praksis inden for
+klubbens nuværende datamodenhed.
+
+\newpage
+## CRISP-DM model:
+![Faserne i CRISP-DM.](crisp-dm.png){#fig-crispdm width="40%"}
