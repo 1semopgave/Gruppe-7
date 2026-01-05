@@ -270,6 +270,11 @@ implementere løsningen uden nogen organisatoriske ændringer. Dette kan bidrage
 til mere præcise forudsigelser af tilskuertallet og dermed bedre planlægning 
 op til kampdagen.
 
+## Link til GitHub
+Den kommenterede løsningsmodel er lave i Quarto og er tilgængelig via GitHub:
+
+https://github.com/1semopgave/Gruppe-7
+
 
 \newpage
 
