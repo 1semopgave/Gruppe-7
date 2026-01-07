@@ -18,10 +18,11 @@ View(fcidk)
 View(vffkort01)
 
 # Superstats crawl --------------------------------------------------------
+# Laver en tom liste, som vi kommer nedstående løkke i
 superstats_program <- list()
 
+# Løkke hvor vi henter alle sæsoner ned fra 2003 til 2026  
 for (y in 2003:2026) {
-# Her laver vi et loop, så vi henter alle sæsoner ned fra 2003 til 2026  
   url <- paste0("https://superstats.dk/program?season=", y)
   print(url)
   
@@ -29,6 +30,7 @@ for (y in 2003:2026) {
     html_nodes("div#club table") |> 
     html_table(header = FALSE, convert = FALSE)
   
+  # Samler alle tabeller fra sæsonen i ét dataframe og tilføjer sæson-variabel
   alle_tabeller <- bind_rows(alle_tabeller) |>
     mutate(sæson = y)  
   
@@ -44,7 +46,7 @@ saveRDS(superstats_program, file = "data/superstats_program.rds")
 superstats_program <- readRDS("data/superstats_program.rds")
 
 
-# Laver alt data til én dataframe
+# Samler alt data til én dataframe
 superstats_dataframe <- bind_rows(superstats_program, .id = "runde")
 view(superstats_dataframe)
 
@@ -82,7 +84,7 @@ superstats_dataframe <- superstats_dataframe |>
 # Danner nye variabler 
 superstats_dataframe <- superstats_dataframe |>
   separate(resultat, into = c("mål_hjemme", "mål_ude"), sep = "-", remove = FALSE) |>
-  # Vi splitter resultat til mål hjemme og mål ude, hvorefter vi danner en variable om VFF har vundet eller tabt
+  # Vi splitter resultat til mål hjemme og mål ude, hvorefter vi danner en variable om VFF har vundet eller ej
   mutate(
     mål_hjemme = as.numeric(mål_hjemme),
     mål_ude    = as.numeric(mål_ude),
@@ -118,7 +120,7 @@ superstats_dataframe <- superstats_dataframe |>
   )
 )
 
-# Her danner vi en ny variable, hvor vi kan se tilskuerantallet til sidste hjemmekamp mod den givende modstander
+# Danner variabel for tilskuertal ved seneste hjemmekamp mod samme modstander
 superstats_dataframe <- superstats_dataframe |>
   mutate(
     tilskuertal = as.numeric(gsub("\\.", "", tilskuertal)),
@@ -153,12 +155,15 @@ for (y in 2003:2025) {
   url_helligdage <- paste0("https://date.nager.at/api/v3/PublicHolidays/", y, "/DK")
   print(url_helligdage)
   
+  # API-kald til Nager.Date
   res <- httr::GET(url_helligdage)
   
+  # Kun hvis statuskoden er 200 (OK), fortsætter vi
   if (httr::status_code(res) == 200) {
     json_content <- httr::content(res, as = "text", encoding = "UTF-8")
     df <- jsonlite::fromJSON(json_content)
     
+    # Gemmer årets helligdage i listen
     helligdage_list[[as.character(y)]] <- df
   }
 }
@@ -166,7 +171,7 @@ for (y in 2003:2025) {
 # Saml alle år til ét dataframe
 helligdage_df <- bind_rows(helligdage_list)
 
-# Her udvælger kun date og localName variablerne. Derefter laver vi navnene om, samt fjerne banklukkedag i vores datasæt
+# Rydder op i helligdagsdatasættet og tilpasser navne/typer
 helligdage <- helligdage_df |> 
   dplyr::select(date, localName) |> 
   rename(
@@ -177,6 +182,7 @@ helligdage <- helligdage_df |>
     dato = as.Date(dato)
   ) |> 
   dplyr::filter(helligdag != "Banklukkedag")
+  # Fjerner "Banklukkedag", som ikke er en normal helligdag
 
 view(helligdage)
 
@@ -193,9 +199,10 @@ dmi_base_url <- "https://dmigw.govcloud.dk/v2/"
 dmi_info_url <- "metObs/collections/observation/items?"
 api_key <- Sys.getenv("MY_API_KEY")
 
-# Funktion
+# Funktion til at hente vejrdata fra DMI
 hent_dmi_data <- function(station_id, parameter_id, start_date, end_date, limit = 50000) {
-  query <- paste0(
+    # Bygger query string med station, parameter, tidsinterval og limit
+    query <- paste0(
     "stationId=", station_id,
     "&parameterId=", parameter_id,
     "&datetime=", start_date, "Z/", end_date, "Z",
@@ -224,7 +231,7 @@ hent_dmi_data <- function(station_id, parameter_id, start_date, end_date, limit 
   
   props <- content_json$features$properties
   
-  # Udtræk data
+  # Opbygger et dataframe med tidspunkt, værdi og parameter-id
   df_selected <- tibble(
     observationstidspunkt = props$observed,
     værdi = as.numeric(props$value),
@@ -283,6 +290,7 @@ for (y in år) {
   )
 }
 
+# Samler det i et dataframe
 vejr_all <- dplyr::bind_rows(vejr_list, .id = "år")
 
 # DMI gemmes til RDS -----------------------------------------------
@@ -388,7 +396,7 @@ dbDisconnect(con_sql)
 
 str(fuld_datasæt)
 
-# Konvertere til de rigite variabler
+# Konvertere til de rigite typer
 fuld_datasæt <- fuld_datasæt |>
   mutate(
     # ---- POSIXCT ----
@@ -511,6 +519,7 @@ split_data <- function(data, seed = 7, k = 5) {
   train <- data[train_opdeling, ]
   test  <- data[test_opdeling, ]
   
+  # laver k-fold opdeling
   set.seed(seed)
   folds <- sample(rep(1:k, length = nrow(train)))
   
@@ -553,6 +562,7 @@ model_ridge_lasso <- function(train, test, seed = 7, k = 5) {
   x_test  <- model.matrix(tilskuertal ~ ., test)[, -1]
   y_test  <- test$tilskuertal
   
+  # Definerer grid af lambda-værdier 
   grid <- 10^seq(10, -2, length = 100)
   
   # Ridge
@@ -602,25 +612,32 @@ predict_regsubsets <- function(object, newdata, form, id) {
   as.numeric(mat[, xvars, drop = FALSE] %*% coefi)
 }
 
+# Best subset-selection med K-fold cross-validation
 model_subset <- function(train, test, folds, k = 5) {
   form <- tilskuertal ~ .
   p <- ncol(train) - 1
   
   cv.errors <- matrix(NA, k, p)
   
-  for (j in 1:k) {
+  for (j in 1:k) { # her gennemløbes alle folds
     best.fit <- leaps::regsubsets(form, data = train[folds != j, ], nvmax = p)
-    for (i in 1:p) {
+    for (i in 1:p) { # her gennemløbes alle kandidatmodeller
       pred <- predict_regsubsets(best.fit, train[folds == j, ], form, id = i)
       cv.errors[j, i] <- mean((train$tilskuertal[folds == j] - pred)^2)
+      # Her udregnes MSE for hver fold og for hver kandidatmodel 
     }
   }
+  
+
   
   mean_mse <- colMeans(cv.errors)
   best_size <- which.min(mean_mse)
   rmse_cv <- sqrt(min(mean_mse))
   
+  # laver best subset på træning
   reg_best <- leaps::regsubsets(form, data = train, nvmax = p)
+  
+  # Forudsigelser på test-sættet for best_size-model samt rmse på test
   pred_test <- predict_regsubsets(reg_best, test, form, id = best_size)
   rmse_test <- sqrt(mean((test$tilskuertal - pred_test)^2))
   
@@ -656,6 +673,7 @@ rmse_table_final1
 
 
 # Best/ worst case scenario -----------------------------------------------
+# Laver 10% og 90% fraktil for tilskuere ved seneste kamp mod modstander
 worst <- as.numeric(quantile(data_1_mdr$tilskuere_sidste_modstander, 0.10, na.rm = TRUE))
 best <- as.numeric(quantile(data_1_mdr$tilskuere_sidste_modstander, 0.90, na.rm = TRUE))
 
@@ -682,7 +700,9 @@ fcn_scenarier <- data.frame(
 
 lm_1mdr <- lm(tilskuertal ~ ., data = data_1_mdr)
 
+# Forudsiger tilskuertal for Brøndby-scenarierne
 brøndby_scenarier$pred <- predict(lm_1mdr, newdata = brøndby_scenarier)
+# Forudsiger tilskuertal for FCN-scenarierne
 fcn_scenarier$pred      <- predict(lm_1mdr, newdata = fcn_scenarier)
 
 brøndby_scenarier
